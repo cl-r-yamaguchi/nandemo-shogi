@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d0d7de; --card: #f6f8fa;
+    --add-bg: #dafbe1; --add-fg: #116329; --del-bg: #ffebe9; --del-fg: #82071e;
+    --mod-bg: #fff8c5; --mod-fg: #7d4e00; --hunk-bg: #ddf4ff; --hunk-fg: #0550ae;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --border: #30363d; --card: #161b22;
+      --add-bg: #12261e; --add-fg: #7ee787; --del-bg: #2d1214; --del-fg: #ffa198;
+      --mod-bg: #272115; --mod-fg: #e3b341; --hunk-bg: #0d2238; --hunk-fg: #79c0ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .meta { color: var(--muted); font-size: 13px; }
+  .summary { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+  ul.files { list-style: none; padding: 0; margin: 0; }
+  ul.files li { padding: 4px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .badge { display: inline-block; min-width: 3.2em; text-align: center; margin-right: 8px; padding: 0 6px;
+    border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .badge.add { background: var(--add-bg); color: var(--add-fg); }
+  .badge.del { background: var(--del-bg); color: var(--del-fg); }
+  .badge.mod { background: var(--mod-bg); color: var(--mod-fg); }
+  section.group { border: 1px solid var(--border); border-radius: 8px; margin: 16px 0; overflow: hidden; }
+  section.group > header { background: var(--card); padding: 10px 16px; border-bottom: 1px solid var(--border);
+    font-size: 16px; font-weight: 600; }
+  section.group > .intent { padding: 10px 16px; }
+  .group-files { list-style: none; margin: 0; padding: 0 16px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .group-files li { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 0 8px;
+    font: 12px/1.8 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pick { border-top: 1px solid var(--border); }
+  .pick .caption { padding: 6px 16px; color: var(--muted); font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .note { padding: 8px 16px 12px; color: var(--muted); font-size: 13px; }
+  pre.diff { margin: 0; overflow-x: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre.diff span { display: block; padding: 0 16px; white-space: pre; }
+  pre.diff .add { background: var(--add-bg); color: var(--add-fg); }
+  pre.diff .del { background: var(--del-bg); color: var(--del-fg); }
+  pre.diff .hunk { background: var(--hunk-bg); color: var(--hunk-fg); }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{TITLE}}</h1>
+  <div class="meta">{{ISSUE}} ・ {{DATE}}</div>
+  <div class="summary">{{SUMMARY}}</div>
+
+  <h2>変更ファイル一覧（全件）</h2>
+  <ul class="files">
+    {{FILE_LIST}}
+    <!-- 1ファイル分: <li><span class="badge add">追加</span>path/to/file</li>
+         badge の種類: add=追加 / mod=変更 / del=削除
+         変更が大量でも、この一覧は省略しない。 -->
+  </ul>
+
+  <h2>変更内容ごとの詳細</h2>
+  {{CHANGE_GROUPS}}
+  <!-- 1つの変更内容(グループ)分:
+  <section class="group">
+    <header>変更内容のタイトル（例: 安全設定の追加）</header>
+    <div class="intent">何を・なぜ変えたかを 1〜2 文で。</div>
+    <ul class="group-files"><li>path/to/file-a</li><li>path/to/file-b</li></ul>
+    <div class="pick">
+      <div class="caption">path/to/file-a（要所のみ抜粋）</div>
+      <pre class="diff"><span class="hunk">@@ -1,3 +1,4 @@</span>
+<span>  変更なしの行</span>
+<span class="add">+ 追加行</span>
+<span class="del">- 削除行</span></pre>
+    </div>
+    <div class="note">ほか N ファイルは同種の変更のため抜粋を省略。</div>
+  </section>
+  差分は要所だけを抜粋する。差分の中身は必ず HTML エスケープ(&lt; &gt; &amp;)すること。 -->
+</main>
+</body>
+</html>

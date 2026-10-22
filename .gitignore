@@ -1,0 +1,19 @@
+# 個人用の Claude Code 設定
+CLAUDE.local.md
+.claude/settings.local.json
+
+# 秘密ファイル
+.env
+.env.*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+Icon?
