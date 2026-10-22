@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/rules",
+  "crates/ai",
+  "crates/protocol",
+  "crates/server",
+  "crates/rules-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
