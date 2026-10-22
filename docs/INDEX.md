@@ -6,7 +6,8 @@
 | --- | --- | --- |
 | [docs/specs/spec.md](specs/spec.md) | 仕様書の入口。目的、ゲームの概要、用語、対象外、仕様書一式の案内 | 最初に読む。仕様の全体像、用語を知りたいとき |
 | [docs/specs/game-rules.md](specs/game-rules.md) | ゲームルールの完全な定義（R- 番号つき。進行・行動・戦闘・成り・勝敗） | ルール・AI の実装、テストを書く、挙動の正解を確認するとき |
-| [docs/specs/pieces.md](specs/pieces.md) | 駒のデータ（大きさ・攻撃力・HP・移動範囲・出現重み・成り先）と移動範囲の表現 | 駒を追加・調整するとき、駒の強さや動きを確認するとき |
+| [docs/specs/pieces.md](specs/pieces.md) | 駒の設計の意図と、駒データ `data/pieces.toml`（数値の唯一の定義）の書き方、移動範囲の部品 | 駒を追加・調整するとき、駒データの書き方を確認するとき |
+| [data/pieces.toml](../data/pieces.toml) | 駒の数値（大きさ・攻撃力・HP・出現重み・成り先・移動範囲）の唯一の定義 | 駒の強さ・動きを確認・調整するとき |
 | [docs/specs/ui.md](specs/ui.md) | 画面、操作、3D 表示、自作 UI 部品、アニメーション、デザイントークン | フロントエンド・UI を実装するとき |
 | [docs/specs/online.md](specs/online.md) | ルーム、マッチング、席順、再接続、通信プロトコル、AI、対局記録 | サーバー・通信・AI を実装するとき |
 | [docs/specs/architecture.md](specs/architecture.md) | モジュール構成、依存の向き、データの所有者、技術選定、非機能要件 | 実装を始める前、モジュールの置き場所や責務に迷ったとき |

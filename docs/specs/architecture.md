@@ -129,7 +129,7 @@ scene（3D）──▶ store（読み取りのみ）
 
 | データ | 所有者（更新できる唯一の場所） | 他は |
 | --- | --- | --- |
-| 駒の定義 | `data/pieces.toml` | `rules` が読み込む。`web` は、`rules-wasm` 経由で使う |
+| 駒の定義（数値） | `data/pieces.toml` | `rules` が読み込む。`web` は、`rules-wasm` 経由で使う |
 | 対局の状態 | サーバーのルーム（アクター） | クライアントは、写しを受け取って表示 |
 | 通信メッセージの型 | `protocol` | TypeScript は、生成したものを使う |
 | 対局の記録 | `server` の `store` | 読み取りは、`store` の関数を通す |

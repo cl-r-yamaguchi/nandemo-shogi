@@ -1,2 +1,140 @@
-# 駒のデータ（唯一の定義）。仕様は docs/specs/pieces.md。
-# 駒の中身は、ルールの実装 Issue で定義する。
+# 駒のデータ（唯一の定義）。駒の数値は、ここにだけ書く。仕様は docs/specs/pieces.md。
+#
+# size       = [横, 縦]（向きが北のとき）
+# weight     = ドローでの出現重み（0 は引かれない）
+# promotes_to = 成り先の駒の id（成らない駒は省略）
+# movement   = 移動範囲の部品の並び。座標は駒の向きを基準にした（右, 前）
+#   offsets = [[右, 前], ...]                      指定の位置へ動ける
+#   rect    = { front = a, side = b }              前後 a・左右 b の長方形（自分の位置を除く）
+#   rays    = [{ dir = "...", min = n, max = m }]  方向に n〜m マス。dir は
+#             front / back / left / right / front-left / front-right / back-left / back-right
+#   charge  = "front"                              他の駒か盤の端まで直進する
+# movement を省略した駒は動かない。
+
+[[piece]]
+id = "castle"
+name = "城"
+size = [2, 2]
+attack = 0
+hp = 10
+weight = 0
+
+[[piece]]
+id = "kid-elephant"
+name = "子供象"
+size = [1, 1]
+attack = 1
+hp = 1
+weight = 10
+promotes_to = "elephant"
+movement = [{ rect = { front = 1, side = 1 } }]
+
+[[piece]]
+id = "elephant"
+name = "象"
+size = [2, 2]
+attack = 2
+hp = 8
+weight = 3
+movement = [{ rect = { front = 2, side = 2 } }]
+
+[[piece]]
+id = "foal"
+name = "小馬"
+size = [1, 1]
+attack = 1
+hp = 1
+weight = 10
+promotes_to = "horse"
+movement = [{ offsets = [[-1, 2], [1, 2]] }]
+
+[[piece]]
+id = "horse"
+name = "馬"
+size = [1, 1]
+attack = 2
+hp = 2
+weight = 4
+# 縦横どちらかの距離がちょうど 2 の 16 マス
+movement = [{ offsets = [
+  [-2, -2], [-1, -2], [0, -2], [1, -2], [2, -2],
+  [-2, -1], [2, -1],
+  [-2, 0], [2, 0],
+  [-2, 1], [2, 1],
+  [-2, 2], [-1, 2], [0, 2], [1, 2], [2, 2],
+] }]
+
+[[piece]]
+id = "kid-lion"
+name = "子供ライオン"
+size = [1, 1]
+attack = 1
+hp = 1
+weight = 10
+promotes_to = "lion"
+movement = [{ rays = [{ dir = "front", min = 1, max = 1 }] }]
+
+[[piece]]
+id = "lion"
+name = "ライオン"
+size = [1, 1]
+attack = 4
+hp = 2
+weight = 4
+movement = [{ rect = { front = 1, side = 1 } }]
+
+[[piece]]
+id = "orca"
+name = "シャチ"
+size = [1, 2]
+attack = 4
+hp = 4
+weight = 5
+movement = [{ rect = { front = 2, side = 1 } }]
+
+[[piece]]
+id = "baby-penguin"
+name = "赤ちゃんペンギン"
+size = [1, 1]
+attack = 1
+hp = 1
+weight = 10
+promotes_to = "jet-penguin"
+movement = [{ rays = [{ dir = "front", min = 1, max = 1 }] }]
+
+[[piece]]
+id = "jet-penguin"
+name = "ジェットペンギン"
+size = [1, 1]
+attack = 3
+hp = 2
+weight = 3
+movement = [{ charge = "front" }]
+
+[[piece]]
+id = "bear"
+name = "クマ"
+size = [1, 1]
+attack = 3
+hp = 6
+weight = 5
+movement = [{ rays = [
+  { dir = "front", min = 1, max = 1 },
+  { dir = "back", min = 1, max = 1 },
+  { dir = "left", min = 1, max = 1 },
+  { dir = "right", min = 1, max = 1 },
+] }]
+
+[[piece]]
+id = "deer"
+name = "シカ"
+size = [1, 1]
+attack = 2
+hp = 3
+weight = 6
+movement = [{ rays = [
+  { dir = "front-left", min = 1, max = 2 },
+  { dir = "front-right", min = 1, max = 2 },
+  { dir = "back-left", min = 1, max = 2 },
+  { dir = "back-right", min = 1, max = 2 },
+] }]
