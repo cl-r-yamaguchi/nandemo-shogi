@@ -1,0 +1,21 @@
+{
+  "name": "nandemo-shogi-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "wasm-pack build ../crates/rules-wasm --target web --out-dir ../../web/src/rules-bridge/pkg --out-name rules_wasm",
+    "dev": "npm run wasm && vite",
+    "build": "npm run wasm && tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "eslint": "^10.13.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

@@ -17,3 +17,17 @@ CLAUDE.local.md
 .DocumentRevisions-V100
 .TemporaryItems
 Icon?
+
+# Rust
+target/
+
+# フロントエンド
+node_modules/
+dist/
+web/src/rules-bridge/pkg/
+
+# SQLite（対局の記録）
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

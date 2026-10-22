@@ -28,7 +28,21 @@
 | 高速化が必要なフロント処理 | Rust を wasm にして使う | 移動範囲・危険判定を、ルールと同じコードで動かす |
 | 型の共有 | Rust の型から TypeScript の型を生成 | プロトコルの型を 1 か所に（原則 4） |
 
-具体的なライブラリの版は、実装の開始時に決め、この表に書き足す。
+### 採用済みの版
+
+| 対象 | 版 |
+| --- | --- |
+| Rust（edition） | 2024（`rustc` 1.99 で確認） |
+| wasm-bindgen | 0.2.129 |
+| wasm-pack | 0.15 |
+| serde / serde_json | 1.0 |
+| ts-rs | 12 |
+| Vite | 8 |
+| TypeScript | 6 |
+| Vitest | 5 |
+| ESLint / typescript-eslint | 10 / 8 |
+
+axum・SQLite のライブラリ・three.js などは、使い始める Issue で決め、この表に書き足す。
 
 ## 3. リポジトリの構成
 
