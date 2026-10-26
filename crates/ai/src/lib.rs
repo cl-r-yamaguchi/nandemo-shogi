@@ -6,6 +6,7 @@
 //! 乱数は呼び出し側から渡す（同じシードと同じ状態からは、同じ手になる）。
 
 pub mod eval;
+mod search;
 
 use std::time::Instant;
 
@@ -23,7 +24,7 @@ pub enum Level {
     One,
     /// 自分の 1 手先を、評価関数で読んで、最もよい行動を選ぶ。
     Two,
-    /// 数手先まで探索する（まだ実装していない。いまは `Two` と同じ動き）。
+    /// 自分と相手の数手先（最大 3 手）まで探索する。締め切りまでに終えた、最も深い結果で指す。
     Three,
 }
 
@@ -83,19 +84,25 @@ pub fn choose_action(
         Level::One => Some(random_with_capture_preference(
             catalog, state, &actions, me, rng,
         )),
-        Level::Two | Level::Three => {
-            Some(best_by_one_ply(catalog, state, actions, me, deadline, rng))
-        }
+        Level::Two => Some(best_by_evaluation(
+            catalog, state, actions, me, deadline, rng, false,
+        )),
+        Level::Three => Some(best_by_evaluation(
+            catalog, state, actions, me, deadline, rng, true,
+        )),
     }
 }
 
-/// 値の最大のものの番号。最大が複数あるときは、ランダムに 1 つ。
+/// 評価値が同点とみなす差。選択（`pick_best`）と、探索の窓（`search`）で、同じ値を使う。
+pub(crate) const TIE: f64 = 1e-9;
+
+/// 値の最大のものの番号。最大が複数あるときは、ランダムに 1 つ。値が無限大でもよい。
 fn pick_best(values: &[f64], rng: &mut impl Rng) -> usize {
-    let best = values.iter().copied().fold(f64::MIN, f64::max);
+    let best = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let ties: Vec<usize> = values
         .iter()
         .enumerate()
-        .filter(|(_, v)| (best - **v).abs() < 1e-9)
+        .filter(|(_, v)| **v == best || (best - **v).abs() < TIE)
         .map(|(i, _)| i)
         .collect();
     ties[rng.below(ties.len() as u64) as usize]
@@ -170,13 +177,15 @@ fn shuffle<T>(items: &mut [T], rng: &mut impl Rng) {
 }
 
 /// 強さ 2: それぞれの行動を適用した直後の局面を評価して、最もよいものを選ぶ。
-fn best_by_one_ply(
+/// `deepen` が `true`（強さ 3）のときは、その結果を土台に、締め切りまで深く読む。
+fn best_by_evaluation(
     catalog: &Catalog,
     state: &GameState,
     actions: Vec<Action>,
     me: PlayerId,
     deadline: Instant,
     rng: &mut impl Rng,
+    deepen: bool,
 ) -> Action {
     // 配置フェーズの城は、位置の評価が別なので、間引かない（城の候補は少ない）
     let mut actions = if state.phase == Phase::Placement {
@@ -202,6 +211,10 @@ fn best_by_one_ply(
             }
         };
         scored.push((action, score));
+    }
+    // 強さ 3: 深さ 1 の結果を土台に、締め切りまで、反復深化で深く読む（配置フェーズの城は、読まない）
+    if deepen && state.phase == Phase::Battle {
+        scored = search::deepen(catalog, state, scored, me, deadline);
     }
     let values: Vec<f64> = scored.iter().map(|(_, s)| *s).collect();
     let index = pick_best(&values, rng);
