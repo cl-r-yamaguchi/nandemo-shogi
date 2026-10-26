@@ -1,5 +1,6 @@
 //! ゲームの状態の型と、不変条件（R-04）の検証。仕様は docs/specs/game-rules.md。
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -10,11 +11,13 @@ use crate::pieces::{Catalog, KindId};
 use crate::turn::DRAW_COUNT;
 
 /// 席の番号（手番の順。0 始まり）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct PlayerId(pub u8);
 
 /// 盤上の駒を区別する番号。駒が消えても、再利用しない。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct PieceId(pub u32);
 
 /// 盤上の駒。
@@ -29,7 +32,9 @@ pub struct Piece {
 }
 
 /// ゲームの段階（game-rules.md の 3 章）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Phase {
     /// 城を 1 つずつ置く（R-12）。
     Placement,
@@ -40,7 +45,9 @@ pub enum Phase {
 
 /// 対戦フェーズの手番の段階（R-04 の前の、game-rules.md の 3.2）。
 /// 配置フェーズと終局後は、`Act` のまま使わない。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "cards", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Stage {
     /// ドロー待ち。手番が始まったところ。
     Draw,

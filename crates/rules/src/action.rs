@@ -2,6 +2,7 @@
 //!
 //! `apply` は、元の状態を変えずに、新しい状態と出来事の列を返す。
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::finish::{self, Outcome};
@@ -13,7 +14,9 @@ use crate::state::{GameState, Phase, Piece, PieceId, PlayerId, Stage};
 pub const CASTLE_MIN_GAP: i32 = 3;
 
 /// 手番での行動。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Action {
     /// 持ち駒を、`anchor`（占有範囲の左上）に、`facing` の向きで置く。
     Place {
@@ -36,7 +39,9 @@ pub enum Action {
 }
 
 /// 行動の結果として起きたこと。画面のアニメーションと記録に使う。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Event {
     Placed {
         piece: PieceId,
@@ -101,7 +106,9 @@ pub enum Event {
 }
 
 /// 行動を拒否する理由。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum ActionError {
     /// この段階では、その行動はできない（例: 配置フェーズに移動、対戦フェーズに城の配置）。
     WrongPhase,

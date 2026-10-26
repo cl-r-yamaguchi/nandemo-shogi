@@ -491,3 +491,21 @@ fn validate_rejects_duplicate_batches_and_incomplete_rankings() {
     done.outcome.as_mut().unwrap().ranking = ids(&[&[0]]); // 1 人が抜けている
     assert!(done.validate(&catalog).is_err());
 }
+
+#[test]
+fn the_placement_turn_counts_castles_placed_and_resets_when_the_battle_starts() {
+    let catalog = catalog();
+    let mut state = GameState::new(&catalog, 3, PlayerId(0)).unwrap();
+    assert_eq!(state.turn, 0);
+    for (placed, x) in [0, 6, 12].into_iter().enumerate() {
+        assert_eq!(state.turn, placed as u32);
+        let place = Action::Place {
+            kind: catalog.castle(),
+            anchor: Pos::new(x, 0),
+            facing: Facing::North,
+        };
+        state = apply(&catalog, &state, &place).unwrap().0;
+    }
+    assert_eq!(state.phase, Phase::Battle);
+    assert_eq!(state.turn, 0);
+}

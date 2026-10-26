@@ -4,7 +4,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::BOARD_SIZE;
 use crate::geometry::{Facing, Pos, Rect};
@@ -13,7 +13,8 @@ use crate::geometry::{Facing, Pos, Rect};
 pub const CASTLE_ID: &str = "castle";
 
 /// 駒の種類を表す番号（カタログ内の位置）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct KindId(pub usize);
 
 /// 移動範囲の方向。（右, 前）の単位ベクトルに対応する。

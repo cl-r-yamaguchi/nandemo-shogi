@@ -1,5 +1,6 @@
 //! 脱落・終局・順位・投了。仕様は docs/specs/game-rules.md の 5 章（R-90〜R-97）。
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::action::{ActionError, Event};
@@ -11,7 +12,9 @@ use crate::state::{GameState, Phase, PlayerId, Stage};
 pub const TURNS_PER_PLAYER: u32 = 100;
 
 /// 終局の理由。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum EndReason {
     /// 生き残りが 1 人になった（投了を含む）（R-93）。
     LastStanding,
@@ -22,7 +25,8 @@ pub enum EndReason {
 }
 
 /// 終局の結果。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Outcome {
     pub reason: EndReason,
     /// 順位ごとの組。先頭が 1 位。同順位の人は、同じ組に席の順に入る（R-97）。
@@ -165,7 +169,12 @@ fn start_battle_if_all_placed(catalog: &Catalog, state: &mut GameState) {
 /// R-11・R-12・R-22: フェーズの移行と、次の席への手番の移動。
 fn advance_phase_and_turn(catalog: &Catalog, state: &mut GameState) {
     match state.phase {
-        Phase::Placement => start_battle_if_all_placed(catalog, state),
+        Phase::Placement => {
+            // 配置フェーズの手番番号は、城を置いた数（クライアントの操作の照合に使う）。
+            // 対戦フェーズが始まるとき、0 に戻る。
+            state.turn += 1;
+            start_battle_if_all_placed(catalog, state);
+        }
         Phase::Battle => state.turn += 1,
         Phase::Finished => return,
     }
