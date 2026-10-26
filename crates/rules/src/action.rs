@@ -4,6 +4,7 @@
 
 use std::fmt;
 
+use crate::finish::{self, Outcome};
 use crate::geometry::{Facing, Pos, Rect};
 use crate::pieces::{Catalog, KindId, PieceDef};
 use crate::state::{GameState, Phase, Piece, PieceId, PlayerId};
@@ -72,6 +73,14 @@ pub enum Event {
     Passed {
         player: PlayerId,
     },
+    /// 脱落した（R-90）。盤上の駒と持ち駒は、すべて消える（R-91）。
+    Eliminated {
+        player: PlayerId,
+    },
+    /// 終局した。結果は、順位と終了理由。
+    Finished {
+        outcome: Outcome,
+    },
 }
 
 /// 行動を拒否する理由。
@@ -99,6 +108,8 @@ pub enum ActionError {
     SameFacing,
     /// 行える行動があるので、パスできない（R-80）。
     PassNotAllowed,
+    /// 存在しない、または脱落済みのプレイヤー。
+    UnknownPlayer,
 }
 
 impl fmt::Display for ActionError {
@@ -118,6 +129,7 @@ impl fmt::Display for ActionError {
             Self::CannotRotate => "城は回転できません",
             Self::SameFacing => "いまと同じ向きです",
             Self::PassNotAllowed => "行える行動があるので、パスできません",
+            Self::UnknownPlayer => "存在しない、または脱落済みのプレイヤーです",
         };
         f.write_str(message)
     }
@@ -128,8 +140,8 @@ impl std::error::Error for ActionError {}
 /// 行動を適用する。元の状態は変えず、新しい状態と出来事の列を返す。
 /// 手番のプレイヤーは `state.current`。
 ///
-/// 脱落・勝敗・引き分け・手番数の上限（R-90〜R-97）は、ここでは扱わない（城が捕食されても、
-/// `eliminated` や `Phase::Finished` は変わらない）。それらは、別の段階で適用する。
+/// 行動のあとに、脱落・終局・手番数の上限（R-90〜R-95）も判定する（`finish` モジュール）。
+/// 投了（R-96）は、手番でなくてもできるので、`finish::resign` で行う。
 pub fn apply(
     catalog: &Catalog,
     state: &GameState,
@@ -139,7 +151,7 @@ pub fn apply(
         return Err(ActionError::WrongPhase);
     }
     let mut next = state.clone();
-    let events = match action {
+    let mut events = match action {
         Action::Place {
             kind,
             anchor,
@@ -149,7 +161,7 @@ pub fn apply(
         Action::Rotate { piece, facing } => rotate(catalog, &mut next, *piece, *facing)?,
         Action::Pass => pass(catalog, &mut next)?,
     };
-    advance_turn(catalog, &mut next);
+    finish::settle_after_action(catalog, &mut next, &mut events);
     debug_assert_eq!(next.validate(catalog), Ok(()));
     Ok((next, events))
 }
@@ -528,34 +540,6 @@ fn pass(catalog: &Catalog, state: &mut GameState) -> Result<Vec<Event>, ActionEr
     Ok(vec![Event::Passed {
         player: state.current,
     }])
-}
-
-/// R-11・R-12・R-22: 次の席へ手番を回す。全員が城を置いたら、対戦フェーズへ進む。
-fn advance_turn(catalog: &Catalog, state: &mut GameState) {
-    match state.phase {
-        Phase::Placement => {
-            let castle = catalog.castle();
-            let all_placed = state
-                .players
-                .iter()
-                .all(|p| p.hand.get(&castle).copied().unwrap_or(0) == 0);
-            if all_placed {
-                state.phase = Phase::Battle;
-                state.turn = 0;
-            }
-        }
-        Phase::Battle => state.turn += 1,
-        Phase::Finished => return,
-    }
-    let seats = state.players.len();
-    let from = usize::from(state.current.0);
-    for offset in 1..=seats {
-        let seat = (from + offset) % seats;
-        if !state.players[seat].eliminated {
-            state.current = PlayerId(seat as u8);
-            return;
-        }
-    }
 }
 
 #[cfg(test)]
