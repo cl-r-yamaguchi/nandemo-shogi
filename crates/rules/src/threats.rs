@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::action::{legal_targets, strike_damage};
+use crate::action::{legal_targets, rects, strike_damage_in};
 use crate::pieces::Catalog;
 use crate::state::{GameState, PieceId};
 
@@ -14,12 +14,14 @@ use crate::state::{GameState, PieceId};
 /// なるものがあれば、その駒は、捕食されうる。手番や、手番の段階は見ない。
 pub fn threats(catalog: &Catalog, state: &GameState) -> BTreeMap<PieceId, Vec<PieceId>> {
     let mut found: BTreeMap<PieceId, BTreeSet<PieceId>> = BTreeMap::new();
+    // 占有範囲は、盤面が同じ間は変わらないので、1 回だけ作って、使い回す
+    let all = rects(catalog, state);
     for attacker in &state.pieces {
         if state.players[usize::from(attacker.owner.0)].eliminated {
             continue;
         }
         for target in legal_targets(catalog, state, attacker.id) {
-            for (victim_id, damage) in strike_damage(catalog, state, attacker, target) {
+            for (victim_id, damage) in strike_damage_in(catalog, &all, attacker, target) {
                 let Some(victim) = state.piece(victim_id) else {
                     continue;
                 };

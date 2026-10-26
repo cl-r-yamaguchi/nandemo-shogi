@@ -1050,3 +1050,98 @@ fn legal_placements_lists_every_facing() {
     // 城（2x2）を囲む 12 マス × 4 方向
     assert_eq!(list.len(), 12 * 4);
 }
+
+// ---- 合法な行動の一覧 ----
+
+#[test]
+fn legal_actions_in_placement_are_the_castle_spots() {
+    let catalog = catalog();
+    let state = new_game(&catalog, 2);
+    let actions = legal_actions(&catalog, &state);
+    assert_eq!(
+        actions.len(),
+        legal_placements(&catalog, &state, catalog.castle()).len()
+    );
+    assert!(actions.iter().all(|a| matches!(
+        a,
+        Action::Place {
+            facing: Facing::North,
+            ..
+        }
+    )));
+    assert!(actions.iter().all(|a| apply(&catalog, &state, a).is_ok()));
+}
+
+#[test]
+fn legal_actions_list_moves_rotations_and_placements_in_battle() {
+    let catalog = catalog();
+    let mut state = battle(&catalog);
+    put(&mut state, &catalog, "castle", 0, 0, 0, Facing::North);
+    let lion = put(&mut state, &catalog, "lion", 0, 5, 5, Facing::North);
+    give(&mut state, &catalog, 0, "kid-lion");
+    let actions = legal_actions(&catalog, &state);
+    assert!(
+        actions.iter().all(|a| apply(&catalog, &state, a).is_ok()),
+        "どの行動も受理される"
+    );
+    let moves = actions
+        .iter()
+        .filter(|a| matches!(a, Action::Move { piece, .. } if *piece == lion))
+        .count();
+    assert_eq!(moves, 8);
+    let rotations = actions
+        .iter()
+        .filter(|a| matches!(a, Action::Rotate { .. }))
+        .count();
+    assert_eq!(rotations, 3);
+    assert!(actions.iter().any(|a| matches!(a, Action::Place { .. })));
+    assert!(!actions.contains(&Action::Pass));
+}
+
+#[test]
+fn legal_actions_offer_promotion_only_when_it_can_happen() {
+    let catalog = catalog();
+    let (state, kid, _) = {
+        let mut state = battle(&catalog);
+        let kid = put(&mut state, &catalog, "kid-elephant", 0, 5, 5, Facing::North);
+        let foal = put(&mut state, &catalog, "foal", 1, 5, 4, Facing::North);
+        (state, kid, foal)
+    };
+    let actions = legal_actions(&catalog, &state);
+    let to_foal = |promote| Action::Move {
+        piece: kid,
+        to: Pos::new(5, 4),
+        promote,
+    };
+    assert!(actions.contains(&to_foal(false)));
+    assert!(actions.contains(&to_foal(true))); // 捕食できて、成れる
+    let to_empty = |promote| Action::Move {
+        piece: kid,
+        to: Pos::new(6, 5),
+        promote,
+    };
+    assert!(actions.contains(&to_empty(false)));
+    assert!(!actions.contains(&to_empty(true))); // 捕食しないので、成れない
+}
+
+#[test]
+fn legal_actions_is_only_pass_when_nothing_can_be_done() {
+    let catalog = catalog();
+    let mut state = battle(&catalog);
+    put(&mut state, &catalog, "lion", 1, 5, 5, Facing::North);
+    assert_eq!(legal_actions(&catalog, &state), [Action::Pass]);
+}
+
+#[test]
+fn legal_actions_follow_the_stage() {
+    let catalog = catalog();
+    let mut state = battle(&catalog);
+    put(&mut state, &catalog, "lion", 0, 5, 5, Facing::North);
+    state.stage = Stage::Draw;
+    assert!(legal_actions(&catalog, &state).is_empty());
+    state.stage = Stage::Pick(vec![catalog.kind_of("lion").unwrap(); 4]);
+    assert_eq!(legal_actions(&catalog, &state).len(), 4);
+    state.stage = Stage::Act;
+    state.phase = Phase::Finished;
+    assert!(legal_actions(&catalog, &state).is_empty());
+}
