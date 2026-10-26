@@ -2,6 +2,7 @@
 //!
 //! 入出力・時刻・乱数の発生源に依存しない。
 
+pub mod action;
 pub mod geometry;
 pub mod pieces;
 pub mod state;

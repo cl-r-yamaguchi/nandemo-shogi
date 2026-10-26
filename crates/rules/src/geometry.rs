@@ -91,6 +91,14 @@ impl Rect {
         self.overlap_area(other) > 0
     }
 
+    /// 2 つの占有範囲の間のすきま（マス数）。横方向と縦方向のすきまの、大きいほう。
+    /// 接していれば（斜めの接触を含む）0、重なっていれば負。
+    pub fn gap(&self, other: &Rect) -> i32 {
+        let gap_x = (other.x - (self.x + self.w)).max(self.x - (other.x + other.w));
+        let gap_y = (other.y - (self.y + self.h)).max(self.y - (other.y + other.h));
+        gap_x.max(gap_y)
+    }
+
     /// アンカーを（dx, dy）だけ動かした占有範囲。
     pub fn translated(&self, dx: i32, dy: i32) -> Self {
         Self {
@@ -189,5 +197,18 @@ mod tests {
                 h: 2
             }
         );
+    }
+
+    #[test]
+    fn gap_is_negative_when_overlapping_zero_when_touching() {
+        let a = Rect::footprint(Pos::new(0, 0), Facing::North, (2, 2));
+        let at = |x, y| Rect::footprint(Pos::new(x, y), Facing::North, (1, 1));
+        assert!(a.gap(&at(1, 1)) < 0);
+        assert_eq!(a.gap(&at(2, 0)), 0); // 辺で接する
+        assert_eq!(a.gap(&at(2, 2)), 0); // 斜めで接する
+        assert_eq!(a.gap(&at(3, 0)), 1);
+        assert_eq!(a.gap(&at(5, 1)), 3);
+        assert_eq!(a.gap(&at(5, 9)), 7); // 大きいほうの軸
+        assert_eq!(a.overlaps(&at(1, 1)), a.gap(&at(1, 1)) < 0);
     }
 }
