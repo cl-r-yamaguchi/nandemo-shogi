@@ -7,6 +7,7 @@ use crate::BOARD_SIZE;
 use crate::finish::Outcome;
 use crate::geometry::{Facing, Pos, Rect};
 use crate::pieces::{Catalog, KindId};
+use crate::turn::DRAW_COUNT;
 
 /// 席の番号（手番の順。0 始まり）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -35,6 +36,18 @@ pub enum Phase {
     /// ドロー・選択・行動を繰り返す。
     Battle,
     Finished,
+}
+
+/// 対戦フェーズの手番の段階（R-04 の前の、game-rules.md の 3.2）。
+/// 配置フェーズと終局後は、`Act` のまま使わない。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stage {
+    /// ドロー待ち。手番が始まったところ。
+    Draw,
+    /// 選択待ち。引いた 4 枚から 1 枚を選ぶ。
+    Pick(Vec<KindId>),
+    /// 行動待ち。配置・移動・回転・パスのいずれかを行う。
+    Act,
 }
 
 /// プレイヤーごとの状態。
@@ -67,6 +80,8 @@ pub enum Violation {
     EliminationRecordMismatch,
     /// 終局の状態と、結果の有無が合わない。
     OutcomeMismatch,
+    /// 手番の段階が、フェーズや引いた駒と合わない。
+    StageMismatch,
 }
 
 impl fmt::Display for Violation {
@@ -91,6 +106,7 @@ impl fmt::Display for Violation {
                 write!(f, "脱落の記録が、プレイヤーの状態と合いません")
             }
             Self::OutcomeMismatch => write!(f, "終局の状態と、結果の有無が合いません"),
+            Self::StageMismatch => write!(f, "手番の段階が、フェーズや引いた駒と合いません"),
         }
     }
 }
@@ -115,6 +131,8 @@ pub struct GameState {
     pub out_batches: Vec<Vec<PlayerId>>,
     /// 終局したときの結果（`phase` が `Finished` のときだけ）。
     pub outcome: Option<Outcome>,
+    /// 対戦フェーズの手番の段階。
+    pub stage: Stage,
     next_piece_id: u32,
 }
 
@@ -156,6 +174,7 @@ impl GameState {
             turn: 0,
             out_batches: Vec::new(),
             outcome: None,
+            stage: Stage::Act,
             next_piece_id: 0,
         })
     }
@@ -216,6 +235,17 @@ impl GameState {
         }
         if (self.phase == Phase::Finished) != self.outcome.is_some() {
             return Err(Violation::OutcomeMismatch);
+        }
+        match &self.stage {
+            Stage::Act => {}
+            Stage::Draw if self.phase == Phase::Battle => {}
+            Stage::Pick(cards)
+                if self.phase == Phase::Battle
+                    && cards.len() == DRAW_COUNT
+                    && cards
+                        .iter()
+                        .all(|k| catalog.get(*k).is_some_and(|d| d.weight > 0)) => {}
+            _ => return Err(Violation::StageMismatch),
         }
         if let Some(outcome) = &self.outcome {
             // 順位は、全員を、過不足なく 1 回ずつ含む
