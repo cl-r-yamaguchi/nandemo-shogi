@@ -288,6 +288,33 @@ pub fn legal_targets(catalog: &Catalog, state: &GameState, id: PieceId) -> Vec<P
         .collect()
 }
 
+/// R-54: `piece` が、アンカーを `to` へ動かしたときに、重なった駒のそれぞれに与えるダメージ。
+/// ダメージは、（重なったマス数）×（攻撃力）。駒の番号の順に返す。
+/// 実際の移動（`apply`）と、危険な駒の判定（`threats`）が、同じ計算を使う。
+pub(crate) fn strike_damage(
+    catalog: &Catalog,
+    state: &GameState,
+    piece: &Piece,
+    to: Pos,
+) -> Vec<(PieceId, u32)> {
+    let Some(def) = catalog.get(piece.kind) else {
+        return Vec::new();
+    };
+    let target = def
+        .footprint(piece.anchor, piece.facing)
+        .translated(to.x - piece.anchor.x, to.y - piece.anchor.y);
+    let mut victims: Vec<(PieceId, u32)> = rects(catalog, state)
+        .into_iter()
+        .filter(|(other, _)| *other != piece.id)
+        .filter_map(|(other, rect)| {
+            let area = target.overlap_area(&rect);
+            (area > 0).then(|| (other, area as u32 * def.attack))
+        })
+        .collect();
+    victims.sort_by_key(|(other, _)| other.0);
+    victims
+}
+
 fn is_castle(catalog: &Catalog, kind: KindId) -> bool {
     catalog.get(kind).is_some_and(PieceDef::is_castle)
 }
@@ -422,21 +449,8 @@ fn mov(
     if !legal_targets(catalog, state, id).contains(&to) {
         return Err(ActionError::IllegalTarget);
     }
-    let def = catalog.get(piece.kind).ok_or(ActionError::UnknownKind)?;
-    let target = def
-        .footprint(piece.anchor, piece.facing)
-        .translated(to.x - piece.anchor.x, to.y - piece.anchor.y);
-
-    // R-54: 重なった駒のそれぞれに、（重なったマス数）×（攻撃力）のダメージを、同時に与える。
-    let mut victims: Vec<(PieceId, u32)> = rects(catalog, state)
-        .into_iter()
-        .filter(|(other, _)| *other != id)
-        .filter_map(|(other, rect)| {
-            let area = target.overlap_area(&rect);
-            (area > 0).then(|| (other, area as u32 * def.attack))
-        })
-        .collect();
-    victims.sort_by_key(|(other, _)| other.0);
+    // R-54: 重なった駒のそれぞれに、同時にダメージを与える。
+    let victims = strike_damage(catalog, state, &piece, to);
 
     let mut events = Vec::new();
     let mut captured_any = false;

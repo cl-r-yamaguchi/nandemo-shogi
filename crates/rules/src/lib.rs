@@ -8,6 +8,7 @@ pub mod geometry;
 pub mod pieces;
 pub mod rng;
 pub mod state;
+pub mod threats;
 pub mod turn;
 
 /// 盤の一辺のマス数。
