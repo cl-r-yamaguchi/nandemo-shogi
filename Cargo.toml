@@ -18,3 +18,7 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+# テストは、AI の対局など、計算が重いものがある。最適化して実行する（デバッグ用の検査は残す）
+[profile.test]
+opt-level = 2

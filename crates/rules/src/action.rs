@@ -224,6 +224,87 @@ pub fn has_legal_action(catalog: &Catalog, state: &GameState) -> bool {
     })
 }
 
+/// 手番のプレイヤーの、合法な行動の一覧。どの行動も、`apply` に受理される。
+/// - 配置フェーズ: 城の配置。
+/// - 選択待ち: 引いた 4 枚の選択（`Pick`）。
+/// - 行動待ち: 配置・移動（捕食して成れるときは、成る・成らないの両方）・回転。
+///   どれも行えないときは、`Pass` だけ。
+/// - ドロー待ちと終局後: 空（ドローは `turn::draw_cards` で行う）。
+pub fn legal_actions(catalog: &Catalog, state: &GameState) -> Vec<Action> {
+    match (state.phase, &state.stage) {
+        (Phase::Finished, _) => return Vec::new(),
+        (Phase::Battle, Stage::Draw) => return Vec::new(),
+        (Phase::Battle, Stage::Pick(cards)) => {
+            return (0..cards.len())
+                .map(|index| Action::Pick { index })
+                .collect();
+        }
+        _ => {}
+    }
+    let me = state.current;
+    let mut actions = Vec::new();
+    if state.phase == Phase::Placement {
+        let castle = catalog.castle();
+        actions.extend(
+            placement_candidates(catalog, state, castle).map(|(anchor, facing)| Action::Place {
+                kind: castle,
+                anchor,
+                facing,
+            }),
+        );
+        return actions;
+    }
+    // 対戦フェーズの、行動待ち
+    for (kind, count) in &state.players[usize::from(me.0)].hand {
+        if *count == 0 || is_castle(catalog, *kind) {
+            continue;
+        }
+        actions.extend(
+            placement_candidates(catalog, state, *kind).map(|(anchor, facing)| Action::Place {
+                kind: *kind,
+                anchor,
+                facing,
+            }),
+        );
+    }
+    for piece in state.pieces.iter().filter(|p| p.owner == me) {
+        let can_promote = catalog.promotion(piece.kind).is_some();
+        for to in legal_targets(catalog, state, piece.id) {
+            actions.push(Action::Move {
+                piece: piece.id,
+                to,
+                promote: false,
+            });
+            if can_promote {
+                let promote = Action::Move {
+                    piece: piece.id,
+                    to,
+                    promote: true,
+                };
+                // 成れるのは、捕食が起きて、成り先の範囲が空いているときだけ。成れないなら、重複なので入れない
+                let promotes = apply(catalog, state, &promote).is_ok_and(|(_, events)| {
+                    events.iter().any(|e| matches!(e, Event::Promoted { .. }))
+                });
+                if promotes {
+                    actions.push(promote);
+                }
+            }
+        }
+        for facing in Facing::ALL {
+            if check_rotation(catalog, state, piece, facing).is_ok() {
+                actions.push(Action::Rotate {
+                    piece: piece.id,
+                    facing,
+                });
+            }
+        }
+    }
+    if actions.is_empty() {
+        actions.push(Action::Pass);
+    }
+    actions
+}
+
 /// 手番のプレイヤーが `kind` を置ける（アンカー, 向き）の一覧。
 pub fn legal_placements(catalog: &Catalog, state: &GameState, kind: KindId) -> Vec<(Pos, Facing)> {
     placement_candidates(catalog, state, kind).collect()
@@ -297,18 +378,29 @@ pub(crate) fn strike_damage(
     piece: &Piece,
     to: Pos,
 ) -> Vec<(PieceId, u32)> {
+    strike_damage_in(catalog, &rects(catalog, state), piece, to)
+}
+
+/// `strike_damage` の、全駒の占有範囲（`rects`）を、呼び出し側が持っている版。
+/// 何度も呼ぶとき（危険な駒の判定）に、占有範囲の計算を使い回すためのもの。
+pub(crate) fn strike_damage_in(
+    catalog: &Catalog,
+    all: &[(PieceId, Rect)],
+    piece: &Piece,
+    to: Pos,
+) -> Vec<(PieceId, u32)> {
     let Some(def) = catalog.get(piece.kind) else {
         return Vec::new();
     };
     let target = def
         .footprint(piece.anchor, piece.facing)
         .translated(to.x - piece.anchor.x, to.y - piece.anchor.y);
-    let mut victims: Vec<(PieceId, u32)> = rects(catalog, state)
-        .into_iter()
+    let mut victims: Vec<(PieceId, u32)> = all
+        .iter()
         .filter(|(other, _)| *other != piece.id)
         .filter_map(|(other, rect)| {
-            let area = target.overlap_area(&rect);
-            (area > 0).then(|| (other, area as u32 * def.attack))
+            let area = target.overlap_area(rect);
+            (area > 0).then(|| (*other, area as u32 * def.attack))
         })
         .collect();
     victims.sort_by_key(|(other, _)| other.0);
@@ -319,7 +411,8 @@ fn is_castle(catalog: &Catalog, kind: KindId) -> bool {
     catalog.get(kind).is_some_and(PieceDef::is_castle)
 }
 
-fn rects(catalog: &Catalog, state: &GameState) -> Vec<(PieceId, Rect)> {
+/// 全駒の占有範囲（駒の番号つき）。
+pub(crate) fn rects(catalog: &Catalog, state: &GameState) -> Vec<(PieceId, Rect)> {
     state
         .pieces
         .iter()
