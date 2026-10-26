@@ -6,6 +6,63 @@ fn catalog() -> Catalog {
     Catalog::builtin().unwrap()
 }
 
+/// 対戦フェーズでは、城のないプレイヤーは脱落する（R-90）。
+/// これらのテストは、駒を直接置いた盤を使うので、城のない（脱落していない）プレイヤーに、
+/// 空いている場所へ城を補ってから、`super::apply` を呼ぶ。
+fn with_castles(catalog: &Catalog, state: &GameState) -> GameState {
+    let mut state = state.clone();
+    if state.phase != Phase::Battle {
+        return state;
+    }
+    for seat in 0..state.players.len() {
+        let owner = PlayerId(seat as u8);
+        let has_castle = state
+            .pieces
+            .iter()
+            .any(|p| p.owner == owner && p.kind == catalog.castle());
+        if state.players[seat].eliminated || has_castle {
+            continue;
+        }
+        let size = state.board_size as i32;
+        let spot = (0..size - 1)
+            .rev()
+            .flat_map(|y| (0..size - 1).rev().map(move |x| Pos::new(x, y)))
+            .find(|anchor| {
+                let rect = catalog
+                    .get(catalog.castle())
+                    .unwrap()
+                    .footprint(*anchor, Facing::North);
+                state
+                    .pieces
+                    .iter()
+                    .filter_map(|p| state.footprint(catalog, p))
+                    .all(|other| !other.overlaps(&rect))
+            })
+            .expect("城を置ける空きがあること");
+        let id = state.issue_piece_id();
+        state.pieces.insert(
+            0,
+            Piece {
+                id,
+                kind: catalog.castle(),
+                owner,
+                anchor: spot,
+                facing: Facing::North,
+                hp: catalog.get(catalog.castle()).unwrap().hp,
+            },
+        );
+    }
+    state
+}
+
+fn apply(
+    catalog: &Catalog,
+    state: &GameState,
+    action: &Action,
+) -> Result<(GameState, Vec<Event>), ActionError> {
+    super::apply(catalog, &with_castles(catalog, state), action)
+}
+
 fn new_game(catalog: &Catalog, players: usize) -> GameState {
     GameState::new(catalog, players, PlayerId(0)).unwrap()
 }
@@ -908,6 +965,7 @@ fn r22_turns_pass_in_seat_order_and_skip_eliminated_seats() {
     let lion = put(&mut state, &catalog, "lion", 0, 5, 5, Facing::North);
     put(&mut state, &catalog, "lion", 2, 10, 10, Facing::North);
     state.players[1].eliminated = true;
+    state.out_batches.push(vec![PlayerId(1)]);
     let (next, _) = apply(
         &catalog,
         &state,

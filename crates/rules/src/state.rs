@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::BOARD_SIZE;
+use crate::finish::Outcome;
 use crate::geometry::{Facing, Pos, Rect};
 use crate::pieces::{Catalog, KindId};
 
@@ -60,6 +61,12 @@ pub enum Violation {
     UnknownHandKind(PlayerId),
     /// 手番のプレイヤーが、存在しない、または脱落している。
     InvalidCurrentPlayer(PlayerId),
+    /// 脱落したプレイヤーが、盤上の駒か持ち駒を持っている（R-91）。
+    EliminatedHasAssets(PlayerId),
+    /// 脱落の記録と、`eliminated` の印が合わない。
+    EliminationRecordMismatch,
+    /// 終局の状態と、結果の有無が合わない。
+    OutcomeMismatch,
 }
 
 impl fmt::Display for Violation {
@@ -77,6 +84,13 @@ impl fmt::Display for Violation {
                 write!(f, "プレイヤー {} の持ち駒に、不明な種類があります", p.0)
             }
             Self::InvalidCurrentPlayer(p) => write!(f, "手番のプレイヤー {} が不正です", p.0),
+            Self::EliminatedHasAssets(p) => {
+                write!(f, "脱落したプレイヤー {} が、駒か持ち駒を持っています", p.0)
+            }
+            Self::EliminationRecordMismatch => {
+                write!(f, "脱落の記録が、プレイヤーの状態と合いません")
+            }
+            Self::OutcomeMismatch => write!(f, "終局の状態と、結果の有無が合いません"),
         }
     }
 }
@@ -97,6 +111,10 @@ pub struct GameState {
     pub current: PlayerId,
     /// 対戦フェーズの手番番号（0 始まり）。
     pub turn: u32,
+    /// 脱落した順の記録。同じ行動で同時に脱落した人は、同じ組に入る（R-94・R-97）。
+    pub out_batches: Vec<Vec<PlayerId>>,
+    /// 終局したときの結果（`phase` が `Finished` のときだけ）。
+    pub outcome: Option<Outcome>,
     next_piece_id: u32,
 }
 
@@ -136,8 +154,33 @@ impl GameState {
             phase: Phase::Placement,
             current: first,
             turn: 0,
+            out_batches: Vec::new(),
+            outcome: None,
             next_piece_id: 0,
         })
+    }
+
+    /// 脱落していないプレイヤー（席の順）。
+    pub fn alive_players(&self) -> Vec<PlayerId> {
+        self.players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.eliminated)
+            .map(|(seat, _)| PlayerId(seat as u8))
+            .collect()
+    }
+
+    /// 手番を、次の席（脱落した席は飛ばす）へ回す（R-22）。生き残りがいなければ、そのまま。
+    pub fn advance_current(&mut self) {
+        let seats = self.players.len();
+        let from = usize::from(self.current.0);
+        for offset in 1..=seats {
+            let seat = (from + offset) % seats;
+            if !self.players[seat].eliminated {
+                self.current = PlayerId(seat as u8);
+                return;
+            }
+        }
     }
 
     /// 新しい駒の番号を発行する。
@@ -162,13 +205,46 @@ impl GameState {
         let mut rects: Vec<(PieceId, Rect)> = Vec::with_capacity(self.pieces.len());
         let mut castles: BTreeMap<PlayerId, u32> = BTreeMap::new();
 
-        match self.players.get(usize::from(self.current.0)) {
-            Some(player) if !player.eliminated => {}
-            _ => return Err(Violation::InvalidCurrentPlayer(self.current)),
+        // 終局したあとは、手番のプレイヤーが脱落していてもよい
+        if self.phase != Phase::Finished {
+            match self.players.get(usize::from(self.current.0)) {
+                Some(player) if !player.eliminated => {}
+                _ => return Err(Violation::InvalidCurrentPlayer(self.current)),
+            }
+        } else if usize::from(self.current.0) >= self.players.len() {
+            return Err(Violation::InvalidCurrentPlayer(self.current));
+        }
+        if (self.phase == Phase::Finished) != self.outcome.is_some() {
+            return Err(Violation::OutcomeMismatch);
+        }
+        if let Some(outcome) = &self.outcome {
+            // 順位は、全員を、過不足なく 1 回ずつ含む
+            let mut ranked: Vec<u8> = outcome.ranking.iter().flatten().map(|p| p.0).collect();
+            ranked.sort_unstable();
+            let all: Vec<u8> = (0..self.players.len() as u8).collect();
+            if ranked != all || outcome.ranking.iter().any(Vec::is_empty) {
+                return Err(Violation::OutcomeMismatch);
+            }
+        }
+        let recorded: Vec<PlayerId> = self.out_batches.iter().flatten().copied().collect();
+        let flagged = self.players.iter().filter(|p| p.eliminated).count();
+        let unique: std::collections::BTreeSet<_> = recorded.iter().collect();
+        let consistent = recorded.len() == flagged
+            && unique.len() == recorded.len()
+            && recorded.iter().all(|p| {
+                self.players
+                    .get(usize::from(p.0))
+                    .is_some_and(|state| state.eliminated)
+            });
+        if !consistent {
+            return Err(Violation::EliminationRecordMismatch);
         }
         for (seat, player) in self.players.iter().enumerate() {
             if player.hand.keys().any(|kind| catalog.get(*kind).is_none()) {
                 return Err(Violation::UnknownHandKind(PlayerId(seat as u8)));
+            }
+            if player.eliminated && !player.hand.is_empty() {
+                return Err(Violation::EliminatedHasAssets(PlayerId(seat as u8)));
             }
         }
 
@@ -178,6 +254,9 @@ impl GameState {
                 .ok_or(Violation::UnknownKind(piece.id))?;
             if usize::from(piece.owner.0) >= self.players.len() {
                 return Err(Violation::UnknownOwner(piece.id));
+            }
+            if self.players[usize::from(piece.owner.0)].eliminated {
+                return Err(Violation::EliminatedHasAssets(piece.owner));
             }
             if piece.id.0 >= self.next_piece_id {
                 return Err(Violation::PieceIdNotIssued(piece.id));
