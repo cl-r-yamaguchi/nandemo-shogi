@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::action::{ActionError, Event};
 use crate::pieces::Catalog;
-use crate::state::{GameState, Phase, PlayerId};
+use crate::state::{GameState, Phase, PlayerId, Stage};
 
 /// R-95: 手番数の上限は、1 人あたりこの回数。上限は「開始時の人数 × この回数」で、
 /// 途中で脱落者が出ても変わらない。
@@ -101,6 +101,8 @@ fn finish(catalog: &Catalog, state: &mut GameState, reason: EndReason, events: &
     }));
     let outcome = Outcome { reason, ranking };
     state.phase = Phase::Finished;
+    // 終局後は、手番の段階を使わない（ドロー待ち・選択待ちを残さない）
+    state.stage = Stage::Act;
     state.outcome = Some(outcome.clone());
     events.push(Event::Finished { outcome });
 }
@@ -168,6 +170,17 @@ fn advance_phase_and_turn(catalog: &Catalog, state: &mut GameState) {
         Phase::Finished => return,
     }
     state.advance_current();
+    reset_stage(state);
+}
+
+/// 手番が変わったときの、手番の段階。対戦フェーズでは、新しい手番は、ドローから始まる（3.2）。
+/// 配置フェーズは、段階を使わない。
+fn reset_stage(state: &mut GameState) {
+    state.stage = if state.phase == Phase::Battle {
+        Stage::Draw
+    } else {
+        Stage::Act
+    };
 }
 
 /// R-96: プレイヤーが投了する。手番でなくても、いつでもできる（終局後を除く）。
@@ -192,11 +205,16 @@ pub fn resign(
     let mut events = Vec::new();
     eliminate(&mut next, &[player], &mut events);
     if !finish_if_decided(catalog, &mut next, &mut events) {
-        if next.current == player {
+        let was_current = next.current == player;
+        if was_current {
             next.advance_current();
         }
         // 配置フェーズで、残りの全員が城を置き終えていたら、対戦フェーズへ進む
         start_battle_if_all_placed(catalog, &mut next);
+        // 手番のプレイヤーが変わった、または対戦が始まったときは、ドローから始める
+        if was_current || next.phase != state.phase {
+            reset_stage(&mut next);
+        }
     }
     debug_assert_eq!(next.validate(catalog), Ok(()));
     Ok((next, events))

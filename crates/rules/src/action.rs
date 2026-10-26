@@ -7,7 +7,7 @@ use std::fmt;
 use crate::finish::{self, Outcome};
 use crate::geometry::{Facing, Pos, Rect};
 use crate::pieces::{Catalog, KindId, PieceDef};
-use crate::state::{GameState, Phase, Piece, PieceId, PlayerId};
+use crate::state::{GameState, Phase, Piece, PieceId, PlayerId, Stage};
 
 /// R-13: 城どうしの間に、あけるすきまの最小値（マス数）。
 pub const CASTLE_MIN_GAP: i32 = 3;
@@ -31,6 +31,8 @@ pub enum Action {
     Rotate { piece: PieceId, facing: Facing },
     /// 行える行動がないとき、何もせずに手番を終える（R-80）。
     Pass,
+    /// 引いた 4 枚のうち、`index` 番目（0 始まり）を持ち駒にする（R-06）。
+    Pick { index: usize },
 }
 
 /// 行動の結果として起きたこと。画面のアニメーションと記録に使う。
@@ -81,6 +83,21 @@ pub enum Event {
     Finished {
         outcome: Outcome,
     },
+    /// 駒を引いた（R-05）。全員に公開される。
+    Drawn {
+        player: PlayerId,
+        cards: Vec<KindId>,
+    },
+    /// 引いた駒から 1 枚を選び、持ち駒に加えた（R-06）。
+    Picked {
+        player: PlayerId,
+        kind: KindId,
+        index: usize,
+    },
+    /// 持ち時間を過ぎて、手番を強制的に終えた（R-31）。行動は、パスと同じ扱い（`Passed` は重ねない）。
+    TimedOut {
+        player: PlayerId,
+    },
 }
 
 /// 行動を拒否する理由。
@@ -110,6 +127,12 @@ pub enum ActionError {
     PassNotAllowed,
     /// 存在しない、または脱落済みのプレイヤー。
     UnknownPlayer,
+    /// 手番の段階に合わない操作（ドロー前の選択、選択前の行動、再選択など）。
+    WrongStage,
+    /// 引いた 4 枚の番号が範囲外。
+    InvalidPick,
+    /// 城を置ける場所がない（配置フェーズの時間切れ）。呼び出し側が、そのプレイヤーを投了させる。
+    NoLegalPlacement,
 }
 
 impl fmt::Display for ActionError {
@@ -130,6 +153,9 @@ impl fmt::Display for ActionError {
             Self::SameFacing => "いまと同じ向きです",
             Self::PassNotAllowed => "行える行動があるので、パスできません",
             Self::UnknownPlayer => "存在しない、または脱落済みのプレイヤーです",
+            Self::WrongStage => "いまの手番の段階では、その操作はできません",
+            Self::InvalidPick => "引いた駒の番号が範囲外です",
+            Self::NoLegalPlacement => "城を置ける場所がありません",
         };
         f.write_str(message)
     }
@@ -151,6 +177,15 @@ pub fn apply(
         return Err(ActionError::WrongPhase);
     }
     let mut next = state.clone();
+    if let Action::Pick { index } = action {
+        let events = pick(&mut next, *index)?;
+        debug_assert_eq!(next.validate(catalog), Ok(()));
+        return Ok((next, events));
+    }
+    // 対戦フェーズでは、選択を終えた「行動待ち」の段階でだけ、行動できる（R-06）
+    if next.phase == Phase::Battle && next.stage != Stage::Act {
+        return Err(ActionError::WrongStage);
+    }
     let mut events = match action {
         Action::Place {
             kind,
@@ -160,6 +195,7 @@ pub fn apply(
         Action::Move { piece, to, promote } => mov(catalog, &mut next, *piece, *to, *promote)?,
         Action::Rotate { piece, facing } => rotate(catalog, &mut next, *piece, *facing)?,
         Action::Pass => pass(catalog, &mut next)?,
+        Action::Pick { .. } => unreachable!("選択は、上で処理済み"),
     };
     finish::settle_after_action(catalog, &mut next, &mut events);
     debug_assert_eq!(next.validate(catalog), Ok(()));
@@ -528,6 +564,28 @@ fn rotate(
         p.facing = facing;
     }
     Ok(vec![Event::Rotated { piece: id, facing }])
+}
+
+/// R-06・R-20・R-21: 引いた 4 枚から 1 枚を持ち駒に加え、残りは捨てる。選び直しはできない。
+fn pick(state: &mut GameState, index: usize) -> Result<Vec<Event>, ActionError> {
+    if state.phase != Phase::Battle {
+        return Err(ActionError::WrongPhase);
+    }
+    let Stage::Pick(cards) = &state.stage else {
+        return Err(ActionError::WrongStage);
+    };
+    let kind = *cards.get(index).ok_or(ActionError::InvalidPick)?;
+    let player = state.current;
+    *state.players[usize::from(player.0)]
+        .hand
+        .entry(kind)
+        .or_insert(0) += 1;
+    state.stage = Stage::Act;
+    Ok(vec![Event::Picked {
+        player,
+        kind,
+        index,
+    }])
 }
 
 fn pass(catalog: &Catalog, state: &mut GameState) -> Result<Vec<Event>, ActionError> {
