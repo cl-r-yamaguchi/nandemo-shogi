@@ -8,7 +8,7 @@ use rules::threats::threatened_pieces;
 pub const WIN: f64 = 1_000_000.0;
 
 const OWN_CASTLE_HP: f64 = 5.0;
-const ENEMY_CASTLE_HP: f64 = 4.0;
+pub(crate) const ENEMY_CASTLE_HP: f64 = 4.0;
 const HAND_WEIGHT: f64 = 0.5;
 const THREATENED_OWN: f64 = 0.6;
 const THREATENED_ENEMY: f64 = 0.3;

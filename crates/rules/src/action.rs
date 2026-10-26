@@ -372,7 +372,7 @@ pub fn legal_targets(catalog: &Catalog, state: &GameState, id: PieceId) -> Vec<P
 /// R-54: `piece` が、アンカーを `to` へ動かしたときに、重なった駒のそれぞれに与えるダメージ。
 /// ダメージは、（重なったマス数）×（攻撃力）。駒の番号の順に返す。
 /// 実際の移動（`apply`）と、危険な駒の判定（`threats`）が、同じ計算を使う。
-pub(crate) fn strike_damage(
+pub fn strike_damage(
     catalog: &Catalog,
     state: &GameState,
     piece: &Piece,

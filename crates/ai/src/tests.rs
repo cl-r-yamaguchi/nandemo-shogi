@@ -44,6 +44,16 @@ fn battle(catalog: &Catalog, players: usize) -> GameState {
 
 /// 席ごとの強さで、終局まで対局する。毎回の手が合法であることも確かめる。終局後の状態を返す。
 fn play(catalog: &Catalog, levels: &[Level], seed: u64) -> GameState {
+    play_with_deadline(catalog, levels, seed, Duration::from_secs(60))
+}
+
+/// 1 手あたりの持ち時間を指定して、対局する。
+fn play_with_deadline(
+    catalog: &Catalog,
+    levels: &[Level],
+    seed: u64,
+    per_move: Duration,
+) -> GameState {
     let mut rng = SplitMix64(seed);
     let first = PlayerId(rng.below(levels.len() as u64) as u8);
     let mut state = GameState::new(catalog, levels.len(), first).unwrap();
@@ -62,7 +72,8 @@ fn play(catalog: &Catalog, levels: &[Level], seed: u64) -> GameState {
             }
             _ => {
                 let action =
-                    choose_action(catalog, &state, level, far(), &mut rng).expect("行動があるはず");
+                    choose_action(catalog, &state, level, Instant::now() + per_move, &mut rng)
+                        .expect("行動があるはず");
                 apply(catalog, &state, &action)
                     .unwrap_or_else(|e| panic!("AI が不正な行動を選びました: {action:?}: {e}"))
                     .0
@@ -221,17 +232,6 @@ fn level2_returns_a_legal_action_even_after_the_deadline() {
 }
 
 #[test]
-fn level3_behaves_like_level2_for_now() {
-    let catalog = catalog();
-    let mut state = battle(&catalog, 2);
-    put(&mut state, &catalog, "lion", 0, 5, 5);
-    put(&mut state, &catalog, "kid-lion", 1, 5, 3);
-    let two = choose_action(&catalog, &state, Level::Two, far(), &mut SplitMix64(9));
-    let three = choose_action(&catalog, &state, Level::Three, far(), &mut SplitMix64(9));
-    assert_eq!(two, three);
-}
-
-#[test]
 fn level2_thins_out_a_huge_number_of_placements_but_keeps_every_move() {
     let catalog = catalog();
     let mut state = battle(&catalog, 2);
@@ -261,9 +261,165 @@ fn level2_thins_out_a_huge_number_of_placements_but_keeps_every_move() {
         assert!(thinned.contains(action));
     }
     assert!(thinned.iter().all(|a| all.contains(a)));
-    // 選ばれる行動は、合法
-    let chosen = choose_action(&catalog, &state, Level::Two, far(), &mut SplitMix64(1)).unwrap();
-    assert!(all.contains(&chosen));
+    for level in [Level::Two, Level::Three] {
+        let chosen = choose_action(&catalog, &state, level, far(), &mut SplitMix64(1)).unwrap();
+        assert!(all.contains(&chosen));
+    }
+}
+
+#[test]
+fn pick_best_handles_infinite_values_and_ties() {
+    let mut rng = SplitMix64(1);
+    assert!(pick_best(&[f64::NEG_INFINITY, f64::NEG_INFINITY], &mut rng) < 2);
+    assert_eq!(pick_best(&[1.0, f64::INFINITY, 3.0], &mut rng), 1);
+    let tie_picks: std::collections::BTreeSet<usize> = (0..40)
+        .map(|s| pick_best(&[2.0, 2.0, 1.0], &mut SplitMix64(s)))
+        .collect();
+    assert_eq!(tie_picks, std::collections::BTreeSet::from([0, 1]));
+}
+
+// ---- 強さ 3 ----
+
+/// 次の局面で、`loser` が、相手の 1 手で負ける（城を失って終局する）手があるか。
+fn can_lose_next_move(catalog: &Catalog, state: &GameState, loser: PlayerId) -> bool {
+    let mut next = state.clone();
+    if next.phase != Phase::Battle {
+        return false;
+    }
+    next.stage = Stage::Act;
+    legal_actions(catalog, &next)
+        .into_iter()
+        .filter(|a| matches!(a, Action::Move { .. }))
+        .any(|a| {
+            apply(catalog, &next, &a).is_ok_and(|(after, _)| {
+                after.phase == Phase::Finished
+                    && after
+                        .outcome
+                        .as_ref()
+                        .is_some_and(|o| !o.winners().contains(&loser))
+            })
+        })
+}
+
+/// 自分の城（HP 4）の隣に、敵のライオンがいて、次の手で城を捕食される。
+/// 防ぐには、自分のライオンで、敵のライオンを捕食する（手番は自分）。ほかの行動は、すべて、負けにつながる。
+fn castle_under_attack(catalog: &Catalog) -> (GameState, PieceId) {
+    let mut state = battle(catalog, 2);
+    state
+        .pieces
+        .iter_mut()
+        .find(|p| p.owner == PlayerId(0))
+        .unwrap()
+        .hp = 4;
+    put(&mut state, catalog, "lion", 1, 2, 0); // 城（0..1 x 0..1）の隣。1,0 へ動くと、城を攻撃する
+    let defender = put(&mut state, catalog, "lion", 0, 3, 1);
+    // 囮: 価値の高い敵の駒を捕食できる位置にも、自分の駒を置く
+    put(&mut state, catalog, "bear", 0, 9, 9);
+    put(&mut state, catalog, "kid-elephant", 1, 9, 8);
+    (state, defender)
+}
+
+#[test]
+fn level3_avoids_a_move_that_loses_the_game_next_turn() {
+    let catalog = catalog();
+    let (state, _) = castle_under_attack(&catalog);
+    // 何もしなければ（手番を相手に渡せば）、負ける局面
+    let mut if_pass = state.clone();
+    if_pass.current = PlayerId(1);
+    assert!(can_lose_next_move(&catalog, &if_pass, PlayerId(0)));
+    for seed in 0..5 {
+        let action =
+            choose_action(&catalog, &state, Level::Three, far(), &mut SplitMix64(seed)).unwrap();
+        let (after, _) = apply(&catalog, &state, &action).unwrap();
+        assert!(
+            !can_lose_next_move(&catalog, &after, PlayerId(0)),
+            "seed {seed}: {action:?} は、次の手で負ける"
+        );
+    }
+}
+
+#[test]
+fn level3_takes_a_capture_that_wins_the_game() {
+    let catalog = catalog();
+    let mut state = battle(&catalog, 2);
+    let lion = put(&mut state, &catalog, "lion", 0, 12, 13);
+    state
+        .pieces
+        .iter_mut()
+        .find(|p| p.owner == PlayerId(1))
+        .unwrap()
+        .hp = 4;
+    for seed in 0..5 {
+        let action =
+            choose_action(&catalog, &state, Level::Three, far(), &mut SplitMix64(seed)).unwrap();
+        assert!(matches!(action, Action::Move { piece, .. } if piece == lion));
+        let (next, _) = apply(&catalog, &state, &action).unwrap();
+        assert_eq!(next.phase, Phase::Finished);
+    }
+}
+
+#[test]
+fn level3_returns_a_legal_action_even_after_the_deadline() {
+    let catalog = catalog();
+    let (state, _) = castle_under_attack(&catalog);
+    let legal = legal_actions(&catalog, &state);
+    let passed = Instant::now() - Duration::from_secs(1);
+    let action = choose_action(&catalog, &state, Level::Three, passed, &mut SplitMix64(1)).unwrap();
+    assert!(legal.contains(&action));
+}
+
+#[test]
+fn level3_stops_near_the_deadline() {
+    let catalog = catalog();
+    let mut state = battle(&catalog, 4);
+    for (id, owner, x, y) in [
+        ("elephant", 0, 5, 5),
+        ("orca", 0, 8, 2),
+        ("lion", 1, 10, 10),
+        ("horse", 1, 3, 9),
+        ("deer", 2, 12, 5),
+        ("bear", 2, 6, 12),
+        ("jet-penguin", 3, 2, 3),
+        ("foal", 3, 7, 7),
+    ] {
+        put(&mut state, &catalog, id, owner, x, y);
+    }
+    let limit = Duration::from_millis(200);
+    let start = Instant::now();
+    let action = choose_action(
+        &catalog,
+        &state,
+        Level::Three,
+        start + limit,
+        &mut SplitMix64(1),
+    )
+    .unwrap();
+    let elapsed = start.elapsed();
+    assert!(legal_actions(&catalog, &state).contains(&action));
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "締め切り（{limit:?}）を大きく超えた: {elapsed:?}"
+    );
+}
+
+#[test]
+fn level3_is_reproducible_when_the_search_finishes() {
+    let catalog = catalog();
+    let (state, _) = castle_under_attack(&catalog);
+    let a = choose_action(&catalog, &state, Level::Three, far(), &mut SplitMix64(5));
+    let b = choose_action(&catalog, &state, Level::Three, far(), &mut SplitMix64(5));
+    assert_eq!(a, b);
+}
+
+#[test]
+fn level3_in_placement_chooses_like_level2() {
+    let catalog = catalog();
+    let mut state = GameState::new(&catalog, 2, PlayerId(1)).unwrap();
+    put(&mut state, &catalog, "castle", 0, 0, 0);
+    state.players[0].hand.clear();
+    let two = choose_action(&catalog, &state, Level::Two, far(), &mut SplitMix64(3));
+    let three = choose_action(&catalog, &state, Level::Three, far(), &mut SplitMix64(3));
+    assert_eq!(two, three);
 }
 
 // ---- 共通 ----
@@ -321,6 +477,14 @@ fn level2_players_finish_a_two_player_game_with_only_legal_moves() {
 }
 
 #[test]
+fn level3_players_finish_a_two_player_game_with_only_legal_moves() {
+    let catalog = catalog();
+    let done = play(&catalog, &[Level::Three, Level::Two], 4);
+    assert_eq!(done.phase, Phase::Finished);
+    assert_eq!(done.validate(&catalog), Ok(()));
+}
+
+#[test]
 fn mixed_levels_finish_a_three_player_game() {
     let catalog = catalog();
     let done = play(&catalog, &[Level::Two, Level::One, Level::Three], 3);
@@ -355,4 +519,33 @@ fn level2_beats_level1_over_many_games() {
     }
     println!("強さ 2 の勝ち: {level2_wins}、強さ 1 の勝ち: {level1_wins}（{games} 局）");
     assert!(level2_wins > level1_wins);
+}
+
+/// 強さ 3 が、強さ 2 より強いことの確認。時間がかかるので、通常のテストからは外している。
+/// 実行: `cargo test -p ai --release -- --ignored level3_beats_level2 --nocapture`
+#[test]
+#[ignore = "時間がかかる。強さの確認用"]
+fn level3_beats_level2_over_many_games() {
+    let catalog = catalog();
+    let games = 20u64;
+    let mut level3_wins = 0;
+    let mut level2_wins = 0;
+    for game in 0..games {
+        let levels = if game % 2 == 0 {
+            [Level::Three, Level::Two]
+        } else {
+            [Level::Two, Level::Three]
+        };
+        let done = play_with_deadline(&catalog, &levels, 200 + game, Duration::from_millis(500));
+        let outcome = done.outcome.expect("終局しているはず");
+        if let [winner] = outcome.winners() {
+            if levels[usize::from(winner.0)] == Level::Three {
+                level3_wins += 1;
+            } else {
+                level2_wins += 1;
+            }
+        }
+    }
+    println!("強さ 3 の勝ち: {level3_wins}、強さ 2 の勝ち: {level2_wins}（{games} 局）");
+    assert!(level3_wins > level2_wins);
 }
