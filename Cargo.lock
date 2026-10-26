@@ -74,6 +74,7 @@ dependencies = [
 name = "protocol"
 version = "0.1.0"
 dependencies = [
+ "rules",
  "serde",
  "serde_json",
  "ts-rs",
@@ -94,6 +95,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "toml",
+ "ts-rs",
 ]
 
 [[package]]

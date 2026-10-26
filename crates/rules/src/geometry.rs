@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// 盤上のマスの座標。x は左から右、y は上から下（北が y の小さいほう）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Pos {
     pub x: i32,
     pub y: i32,
@@ -17,6 +18,8 @@ impl Pos {
 
 /// 駒の向き。移動範囲の「前」の基準。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum Facing {
     North,
     East,

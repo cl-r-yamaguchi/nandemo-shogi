@@ -2,7 +2,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 版 | 1.1 |
+| 版 | 1.2 |
 | 関連 | [game-rules.md](game-rules.md)、[ui.md](ui.md)、[architecture.md](architecture.md) |
 
 ## 1. 前提
@@ -74,51 +74,58 @@
 
 ## 6. 通信プロトコル
 
-WebSocket（JSON のテキストメッセージ）で通信する。メッセージの型は、Rust 側を正として、TypeScript 側の型を生成する（[architecture.md](architecture.md)）。
+WebSocket（JSON のテキストメッセージ）で通信する。メッセージの型は、Rust の `protocol` crate を正として、TypeScript の型を生成する（[architecture.md](architecture.md)）。行動（`Action`）と出来事（`Event`）は、`rules` の型をそのまま使う。
 
 ### 6.1 共通
 
-- すべてのメッセージは `{ "v": <プロトコル版>, "type": "<種別>", ... }` の形。版が合わなければ、接続時に拒否する。
+- すべてのメッセージは `{ "v": <プロトコル版>, "type": "<種別>", ... }` の形。版が合わなければ、接続時に拒否する（`version_mismatch`）。版だけを先に読むので、未知のメッセージでも、版違いが分かる。
 - サーバー時刻と、クライアントの時計のずれの影響を避けるため、時間は「残りミリ秒」で送る。クライアントは、受信した時点からの経過で、残り時間を表示する。
-- クライアントからの操作には、**手番番号**を付ける。サーバーは、古い番号・二重送信・手番でないプレイヤーの操作を、拒否する。
+- クライアントからの操作（`act`）には、**手番番号**（`state` の `turn`）を付ける。対戦フェーズでは、開始からの手番の通し番号。配置フェーズでは、城を置いた数（0 から始まり、対戦フェーズが始まると 0 に戻る）。サーバーは、古い番号・二重送信・手番でないプレイヤーの操作を、拒否する。選択（`pick`）と行動は、同じ手番番号で送る。
+- 盤面・持ち駒・ドローで引いた駒は、すべて全員に公開する（`state` の `StateView`）。
 
 ### 6.2 クライアント → サーバー
 
-| type | 内容 | 使う場面 |
+| type | 項目 | 使う場面 |
 | --- | --- | --- |
-| `hello` | プレイヤー ID、表示名 | 接続直後、再接続 |
-| `find_room` | ルール | あそぶ |
+| `hello` | `player_id`、`display_name` | 接続直後、再接続 |
+| `find_room` | `rules`（`players`、`ai_level`） | あそぶ |
 | `leave_room` | なし | 待機ルームの退出 |
 | `start` | なし | Go ボタン |
-| `pick` | 手番番号、引いた 4 枚のうちの番号（0〜3） | 選択 |
-| `act` | 手番番号、行動（配置・移動・回転）、成りの選択 | 行動の確定 |
+| `act` | `turn`（手番番号）、`action` | 選択・行動の確定 |
 | `resign` | なし | 投了 |
 
-`act` の行動の中身:
+`act` の `action` は、`rules` の `Action`（`type` で区別する）。選択も、ここで送る。
 
-- 配置: `{ kind: "place", piece: <種類>, anchor: [x, y], facing: <向き> }`
-- 移動: `{ kind: "move", piece_id: <盤上の駒の ID>, to_anchor: [x, y] }`（直進の駒は、行き先をサーバーが決めるので、`to_anchor` は、クライアントの予想として送り、一致しなければ拒否する）
-- 回転: `{ kind: "rotate", piece_id: <ID>, facing: <向き> }`
-- 成り: `promote: true | false`（R-63。捕食と成りが可能なときだけ適用）
+- 配置: `{ "type": "place", "kind": <駒の種類の番号>, "anchor": { "x", "y" }, "facing": "north" | "east" | "south" | "west" }`
+- 移動: `{ "type": "move", "piece": <盤上の駒の番号>, "to": { "x", "y" }, "promote": true | false }`（`to` は、移動先のアンカー。直進の駒も、行き先をクライアントが計算して送り、サーバーの計算と一致しなければ拒否する。`promote` は、捕食と成りが可能なときだけ適用）
+- 回転: `{ "type": "rotate", "piece": <番号>, "facing": <向き> }`
+- パス: `{ "type": "pass" }`
+- 選択: `{ "type": "pick", "index": <引いた 4 枚のうちの番号（0〜3）> }`
+
+駒の種類の番号は、`data/pieces.toml` の並びの順（サーバーと、クライアントの wasm が、同じデータを埋め込む）。
 
 ### 6.3 サーバー → クライアント
 
-| type | 内容 |
+| type | 項目 |
 | --- | --- |
-| `room_state` | ルームの状態（席、ルール、待機・対戦中の別） |
-| `game_started` | 席順、色、最初の盤面（空）、乱数のシードは含めない |
-| `turn_started` | 手番のプレイヤー、手番番号、フェーズ、ドローで引いた 4 枚、残りミリ秒 |
-| `state` | 全状態のスナップショット（再接続時、画面の復元用） |
-| `applied` | 行動の結果。出来事（`events`）のリスト |
-| `rejected` | 操作の拒否と理由（コード＋日本語の文言） |
-| `game_over` | 順位、勝者、終了理由 |
-| `notice` | 切断・AI 代行・ルーム破棄などの通知 |
+| `welcome` | `player_id`、`display_name`、`reconnected`（`hello` への返事） |
+| `room_state` | `room`（ルーム ID、状態、ルール、席の一覧） |
+| `game_started` | `room`（席順）、`you`（あなたの席）、`state`（最初の盤面）。乱数のシードは含めない |
+| `turn_started` | `player`（手番の席）、`turn`、`remaining_ms`（残りミリ秒） |
+| `state` | `state`（全状態。再接続時、画面の復元用） |
+| `applied` | `turn`、`events`（出来事のリスト）、`state`（適用後の全状態） |
+| `rejected` | `code`、`reason`、`message`（操作の拒否） |
+| `game_over` | `outcome`（順位・終了理由）、`state` |
+| `notice` | `kind`、`message`（入室・退出・切断・再接続・AI 代行・時間切れ・ルーム終了） |
 
-`applied` の出来事（`events`）の種類: `placed`（配置）、`moved`（移動）、`rotated`（回転）、`damaged`（駒、ダメージ、残り HP）、`captured`（捕食された駒、行き先）、`promoted`（成り）、`eliminated`（脱落）、`timed_out`（時間切れ）、`passed`（パス）。クライアントは、この順に、アニメーションで見せる（[ui.md](ui.md) の 4.4）。
+`rejected` の `code`: `bad_message`・`too_large`・`version_mismatch`・`invalid_name`・`invalid_player_id`・`invalid_rules`・`not_in_room`・`not_playing`・`not_your_turn`・`stale_turn`・`illegal_action`。`reason` は、`illegal_action` のときだけ入り、`rules` の `ActionError`（例: `wrong_stage`、`not_adjacent_to_own`）。
+
+`applied` の出来事（`events`）の種類（`type`）: `placed`（配置）、`moved`（移動）、`rotated`（回転）、`damaged`（駒、ダメージ、残り HP）、`captured`（捕食された駒、取った人、持ち駒に入るか）、`promoted`（成り）、`passed`（パス）、`eliminated`（脱落）、`finished`（終局）、`drawn`（ドロー）、`picked`（選択）、`timed_out`（時間切れ）。クライアントは、この順に、アニメーションで見せる（[ui.md](ui.md) の 4.4）。
 
 ### 6.4 不正な入力への対処
 
-- 受け取るメッセージには、サイズの上限（例: 4 KB）と、形式の検証を設ける。検証に通らないものは、破棄し、繰り返す接続は切る。
+- 受け取るメッセージには、サイズの上限（4096 バイト）と、形式の検証を設ける（`protocol` の `decode_client`）。検証に通らないものは、理由つきの `rejected` を返して破棄し、繰り返す接続は切る。
+- 値の検証: 表示名は 1〜12 文字（前後の空白は除く。制御文字は不可）、プレイヤー ID は 16〜64 文字の英数字・`-`・`_`、ルールは人数 2〜4・AI の強さ 1〜3。
 - 1 接続あたりの、メッセージの送信頻度に上限を設ける。
 - ルール違反の操作は、`rejected` を返す。状態は、変えない。
 - 接続を許すオリジン（ブラウザのページの出どころ）は、設定で決める。ローカルでは、ローカルホストだけ。
@@ -159,3 +166,4 @@ AI は、サーバーの中で動く、席の 1 つ。人間の席と、同じ�
 | --- | --- | --- | --- |
 | 2026-10-22 | 1.0 | オンライン対戦の仕様を作成 | #8 |
 | 2026-10-26 | 1.1 | 強さ 3 の探索の詳細を追加 | #24 |
+| 2026-10-26 | 1.2 | 通信プロトコルを、`protocol` の実装に合わせて更新（選択を `act` に統合、`welcome` の追加、`rejected` の形、値の検証） | #26 |
