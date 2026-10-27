@@ -1,4 +1,4 @@
-mod config;
+use server::config;
 
 fn main() {
     match config::Config::from_env() {

@@ -6,3 +6,8 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+rules = { path = "../rules" }
+ai = { path = "../ai" }
+protocol = { path = "../protocol", default-features = false }

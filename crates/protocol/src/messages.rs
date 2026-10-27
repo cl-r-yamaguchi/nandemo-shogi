@@ -124,6 +124,12 @@ pub enum RejectCode {
     NotInRoom,
     /// 対戦中でない（待機中に行動した、など）。
     NotPlaying,
+    /// 待機中でない（対戦が始まっているルームの、入室や開始）。
+    NotWaiting,
+    /// ルームが満員。
+    RoomFull,
+    /// すでに、ほかのルームに入っている。
+    AlreadyInRoom,
     NotYourTurn,
     /// 手番番号が、古い（二重送信、遅れた操作）。
     StaleTurn,
