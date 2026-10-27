@@ -3,4 +3,4 @@
 /**
  * 操作を拒否した理由。
  */
-export type RejectCode = "bad_message" | "too_large" | "version_mismatch" | "invalid_name" | "invalid_player_id" | "invalid_rules" | "not_in_room" | "not_playing" | "not_waiting" | "room_full" | "already_in_room" | "not_your_turn" | "stale_turn" | "illegal_action";
+export type RejectCode = "bad_message" | "too_large" | "version_mismatch" | "invalid_name" | "invalid_player_id" | "invalid_rules" | "not_in_room" | "not_playing" | "rate_limited" | "not_waiting" | "room_full" | "already_in_room" | "not_your_turn" | "stale_turn" | "illegal_action";

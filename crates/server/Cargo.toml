@@ -11,3 +11,10 @@ workspace = true
 rules = { path = "../rules" }
 ai = { path = "../ai" }
 protocol = { path = "../protocol", default-features = false }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "signal"] }
+axum = { version = "0.8.9", features = ["ws"] }
+futures-util = "0.3.34"
+serde_json = "1.0.154"
+
+[dev-dependencies]
+tokio-tungstenite = "0.30.0"
