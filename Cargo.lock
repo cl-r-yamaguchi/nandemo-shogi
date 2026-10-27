@@ -650,7 +650,10 @@ dependencies = [
 name = "rules-wasm"
 version = "0.1.0"
 dependencies = [
+ "protocol",
  "rules",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
 ]
 

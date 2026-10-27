@@ -89,6 +89,10 @@ pub enum Violation {
     OutcomeMismatch,
     /// 手番の段階が、フェーズや引いた駒と合わない。
     StageMismatch,
+    /// プレイヤーの数が、席の番号（`u8`）で表せる範囲を超えている。
+    TooManyPlayers,
+    /// 持ち駒の表が不正（同じ種類が重なる、個数が 0）。
+    MalformedHand(PlayerId),
 }
 
 impl fmt::Display for Violation {
@@ -114,6 +118,8 @@ impl fmt::Display for Violation {
             }
             Self::OutcomeMismatch => write!(f, "終局の状態と、結果の有無が合いません"),
             Self::StageMismatch => write!(f, "手番の段階が、フェーズや引いた駒と合いません"),
+            Self::TooManyPlayers => write!(f, "プレイヤーの数が多すぎます"),
+            Self::MalformedHand(p) => write!(f, "プレイヤー {} の持ち駒の表が不正です", p.0),
         }
     }
 }
@@ -141,6 +147,19 @@ pub struct GameState {
     /// 対戦フェーズの手番の段階。
     pub stage: Stage,
     next_piece_id: u32,
+}
+
+/// `GameState::restore` に渡す、盤面の写しの中身。
+#[derive(Debug, Clone)]
+pub struct StateParts {
+    pub board_size: u32,
+    pub players: Vec<PlayerState>,
+    pub pieces: Vec<Piece>,
+    pub phase: Phase,
+    pub current: PlayerId,
+    pub turn: u32,
+    pub stage: Stage,
+    pub outcome: Option<Outcome>,
 }
 
 impl GameState {
@@ -184,6 +203,44 @@ impl GameState {
             stage: Stage::Act,
             next_piece_id: 0,
         })
+    }
+
+    /// 外から受け取った、盤面の写しから復元し、不変条件（R-04）を検査する。
+    ///
+    /// 脱落の順（`out_batches`）は、写しにないので、脱落した席を 1 人ずつの組として、席の順に
+    /// 並べて補う。読み取りの問い合わせ用の近似で、このあとの行動で、順位が変わりうる。
+    pub fn restore(catalog: &Catalog, parts: StateParts) -> Result<Self, Violation> {
+        if parts.players.len() > usize::from(u8::MAX) {
+            return Err(Violation::TooManyPlayers);
+        }
+        // 番号が最大の駒は、あふれて、検査で「発行されていない」と扱われる
+        let next_piece_id = parts
+            .pieces
+            .iter()
+            .map(|p| p.id.0.saturating_add(1))
+            .max()
+            .unwrap_or(0);
+        let out_batches = parts
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.eliminated)
+            .map(|(seat, _)| vec![PlayerId(seat as u8)])
+            .collect();
+        let state = Self {
+            board_size: parts.board_size,
+            players: parts.players,
+            pieces: parts.pieces,
+            phase: parts.phase,
+            current: parts.current,
+            turn: parts.turn,
+            out_batches,
+            outcome: parts.outcome,
+            stage: parts.stage,
+            next_piece_id,
+        };
+        state.validate(catalog)?;
+        Ok(state)
     }
 
     /// 脱落していないプレイヤー（席の順）。
