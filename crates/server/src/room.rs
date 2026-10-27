@@ -17,9 +17,11 @@ use rules::pieces::Catalog;
 use rules::rng::{Rng, SplitMix64};
 use rules::state::{GameState, Phase, PlayerId, Stage};
 use rules::turn::{draw_cards, time_out};
+use serde::{Deserialize, Serialize};
 
 use crate::Millis;
 use crate::outbound::Outbound;
+use crate::record::{GameRecord, SeatRecord};
 
 /// 人間の持ち時間（R-30）。
 pub const HUMAN_TURN_MS: Millis = 60_000;
@@ -89,26 +91,36 @@ enum Occupant {
     Ai { name: String },
 }
 
+/// 対局を進めた 1 つの操作。シードと合わせて、対局の再現に使う（`record::replay`）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Move {
+    /// 手番の始めのドロー（`draw_rng` を使う）。
+    Draw,
+    /// 選択・行動（人間・AI）。
+    Act { action: Action },
+    /// 持ち時間切れの強制終了（`draw_rng` を使う）。
+    TimeOut,
+    /// 投了（手番でない人の投了も含む）。
+    Resign,
+}
+
 /// 対局の履歴の 1 件。シードと合わせて、対局の再現と記録に使う。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
-    /// 行動の手番番号（`state.turn`）。
+    /// 操作の前の手番番号（`state.turn`）。
     pub turn: u32,
     pub seat: PlayerId,
-    /// 行動。ドローと、時間切れの強制終了は、`None`。
-    pub action: Option<Action>,
+    pub mv: Move,
     pub events: Vec<Event>,
-    pub timed_out: bool,
 }
 
 /// 結果を反映するときの、行動の情報。
 struct Step {
-    /// 行動の手番番号（`state.turn`）。
+    /// 操作の前の手番番号（`state.turn`）。
     turn: u32,
     seat: PlayerId,
-    /// 行動。ドローと、時間切れの強制終了、投了は、`None`。
-    action: Option<Action>,
-    timed_out: bool,
+    mv: Move,
     /// 次の手番を始めるか（選択と、手番でない人の投了は、始めない）。
     new_turn: bool,
 }
@@ -328,6 +340,31 @@ impl Room {
             Occupant::Human(h) if !h.takeover => Some(h.player_id.as_str()),
             _ => None,
         }
+    }
+
+    /// 対局の記録（対戦が始まってから）。終わったルームを片付けるときに、保存する。
+    pub fn record(&self) -> Option<GameRecord> {
+        let game = self.game.as_ref()?;
+        Some(GameRecord {
+            rules: self.rules,
+            seed: game.seed,
+            seats: self
+                .seats
+                .iter()
+                .map(|s| match s {
+                    Occupant::Human(h) => SeatRecord {
+                        kind: SeatKind::Human,
+                        name: h.name.clone(),
+                    },
+                    Occupant::Ai { name } => SeatRecord {
+                        kind: SeatKind::Ai,
+                        name: name.clone(),
+                    },
+                })
+                .collect(),
+            history: game.history.clone(),
+            outcome: game.state.outcome.clone(),
+        })
     }
 
     pub fn history(&self) -> &[HistoryEntry] {
@@ -551,9 +588,8 @@ impl Room {
             game.history.push(HistoryEntry {
                 turn: game.state.turn,
                 seat: game.state.current,
-                action: None,
+                mv: Move::Draw,
                 events: events.clone(),
-                timed_out: false,
             });
             game.state = next;
             drawn = Some((events, StateView::from_state(&game.state)));
@@ -595,9 +631,8 @@ impl Room {
         game.history.push(HistoryEntry {
             turn: step.turn,
             seat: step.seat,
-            action: step.action,
+            mv: step.mv,
             events: events.clone(),
-            timed_out: step.timed_out,
         });
         game.state = state;
         let view = StateView::from_state(&game.state);
@@ -646,8 +681,7 @@ impl Room {
         let step = Step {
             turn,
             seat: PlayerId(seat as u8),
-            action: Some(action),
-            timed_out: false,
+            mv: Move::Act { action },
             new_turn,
         };
         self.publish(now, step, result, &mut out);
@@ -677,8 +711,7 @@ impl Room {
         let step = Step {
             turn,
             seat: player,
-            action: None,
-            timed_out: false,
+            mv: Move::Resign,
             new_turn: was_current,
         };
         self.publish(now, step, result, &mut out);
@@ -740,8 +773,7 @@ impl Room {
             let step = Step {
                 turn: decision.turn,
                 seat: decision.seat,
-                action: Some(action),
-                timed_out: false,
+                mv: Move::Act { action },
                 new_turn: false,
             };
             self.publish(now, step, result, &mut out);
@@ -757,8 +789,7 @@ impl Room {
                 let step = Step {
                     turn: decision.turn,
                     seat: decision.seat,
-                    action: Some(action),
-                    timed_out: false,
+                    mv: Move::Act { action },
                     new_turn: true,
                 };
                 self.publish(now, step, result, &mut out);
@@ -799,8 +830,7 @@ impl Room {
                 let step = Step {
                     turn,
                     seat,
-                    action: None,
-                    timed_out: true,
+                    mv: Move::TimeOut,
                     new_turn: true,
                 };
                 self.publish(now, step, result, &mut out);

@@ -13,7 +13,7 @@ use rules::rng::SplitMix64;
 use tokio::sync::{Notify, mpsc};
 
 use crate::Millis;
-use crate::lobby::Lobby;
+use crate::lobby::{Lobby, RecordSink};
 use crate::outbound::Outbound;
 use crate::room::AI_THINK_MS;
 
@@ -129,6 +129,11 @@ impl Hub {
             start: Instant::now(),
             open_sockets: AtomicUsize::new(0),
         })
+    }
+
+    /// 終わった対局の記録の渡し先を決める（保存）。
+    pub fn set_record_sink(&self, sink: RecordSink) {
+        self.lock().lobby.set_record_sink(sink);
     }
 
     pub fn config(&self) -> &HubConfig {

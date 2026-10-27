@@ -11,6 +11,7 @@ use rules::rng::Rng;
 
 use crate::Millis;
 use crate::outbound::Outbound;
+use crate::record::GameRecord;
 use crate::room::{AiDecision, AiPlan, Room, RoomError};
 
 /// ルームを探せなかった理由。
@@ -45,7 +46,12 @@ pub struct Lobby {
     /// プレイヤー ID → 入っているルームの番号。
     player_room: HashMap<String, u64>,
     next_id: u64,
+    /// 終わったルームの記録の渡し先（保存）。
+    record_sink: Option<RecordSink>,
 }
+
+/// 終わった対局の記録の渡し先。
+pub type RecordSink = Box<dyn Fn(GameRecord) + Send>;
 
 impl Lobby {
     pub fn new(catalog: Arc<Catalog>) -> Self {
@@ -54,7 +60,13 @@ impl Lobby {
             rooms: BTreeMap::new(),
             player_room: HashMap::new(),
             next_id: 1,
+            record_sink: None,
         }
+    }
+
+    /// 終わった対局の記録の渡し先を決める。
+    pub fn set_record_sink(&mut self, sink: RecordSink) {
+        self.record_sink = Some(sink);
     }
 
     pub fn room_count(&self) -> usize {
@@ -206,7 +218,11 @@ impl Lobby {
             .map(|(id, _)| *id)
             .collect();
         for id in finished {
-            self.rooms.remove(&id);
+            if let (Some(room), Some(sink)) = (self.rooms.remove(&id), &self.record_sink)
+                && let Some(record) = room.record()
+            {
+                sink(record);
+            }
             self.player_room.retain(|_, room| *room != id);
         }
     }

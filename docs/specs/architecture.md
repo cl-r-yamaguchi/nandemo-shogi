@@ -36,13 +36,14 @@
 | wasm-bindgen | 0.2.129 |
 | wasm-pack | 0.15 |
 | serde / serde_json | 1.0 |
+| rusqlite（SQLite を同梱） | 0.41 |
 | ts-rs | 12 |
 | Vite | 8 |
 | TypeScript | 6 |
 | Vitest | 5 |
 | ESLint / typescript-eslint | 10 / 8 |
 
-axum・SQLite のライブラリ・three.js などは、使い始める Issue で決め、この表に書き足す。
+three.js などは、使い始める Issue で決め、この表に書き足す。
 
 ## 3. リポジトリの構成
 
@@ -100,7 +101,8 @@ nandemo-shogi/
   - `ws`: WebSocket の入口（オリジンの検証、接続の読み書き、メッセージの検証、頻度の制限）と、`hub`: 接続の管理、ロビーへの振り分け、結果の配送、時計と AI の駆動（通信の形に依存しない）
   - `lobby`: マッチングとルームの一覧・管理（プレイヤーとルームの対応、終わったルームの片付け）
   - `room`: ルームの状態、手番の進行、タイマー、切断の処理。時計（`Millis`）と乱数は、外から渡し、送るべきメッセージ（`Outbound`）を返す純粋な部分（通信と時計に依存しない。1 ルーム 1 タスクの実行は、通信の層が担う）
-  - `store`: SQLite への保存（**このモジュールだけが、DB に触れる**）
+  - `record`: 終わった対局の記録（純粋なデータ）と、記録からの再現（`replay`）
+  - `store`: SQLite への保存（**このモジュールだけが、DB に触れる**）。専用のスレッドで保存し、対局を止めない
 - **依存**: `rules`、`ai`、`protocol`。
 
 ### 4.5 `rules-wasm`

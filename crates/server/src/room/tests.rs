@@ -338,7 +338,7 @@ fn a_castle_placement_is_applied_and_published_to_everyone() {
     }
     assert_eq!(room.state().unwrap().pieces.len(), 1);
     assert_eq!(room.history().len(), 1);
-    assert_eq!(room.history()[0].action, Some(action));
+    assert_eq!(room.history()[0].mv, Move::Act { action });
 }
 
 #[test]
@@ -571,7 +571,7 @@ fn a_human_turn_times_out_at_the_limit_and_the_turn_moves_on() {
     }
     // 配置フェーズの時間切れは、城を置く（R-14）
     assert_eq!(room.state().unwrap().pieces.len(), 1);
-    assert!(room.history()[0].timed_out);
+    assert_eq!(room.history()[0].mv, Move::TimeOut);
     assert_eq!(room.current_human_id(), Some(other.as_str()));
     // 新しい手番の持ち時間は、そこから数え直す
     assert_eq!(room.next_wakeup(), Some(T0 + 2 * HUMAN_TURN_MS));
