@@ -574,3 +574,73 @@ fn state_view_pieces_expose_only_the_wire_fields() {
         json!({ "id": 0, "kind": catalog.castle().0, "owner": 0, "anchor": { "x": 1, "y": 2 }, "facing": "north", "hp": 10 })
     );
 }
+
+#[test]
+fn a_state_view_restores_the_same_game() {
+    let catalog = Catalog::builtin().unwrap();
+    let original = state();
+    let restored = StateView::from_state(&original).to_state(&catalog).unwrap();
+    assert_eq!(restored, original);
+}
+
+#[test]
+fn a_state_view_that_breaks_an_invariant_is_not_restored() {
+    let catalog = Catalog::builtin().unwrap();
+    let mut view = StateView::from_state(&state());
+    view.current = PlayerId(9);
+    assert!(view.to_state(&catalog).is_err());
+}
+
+#[test]
+fn a_state_view_with_a_malformed_hand_is_not_restored() {
+    let catalog = Catalog::builtin().unwrap();
+    let base = StateView::from_state(&state());
+    let castle = catalog.castle();
+
+    let mut duplicated = base.clone();
+    duplicated.players[0].hand.push(HandEntry {
+        kind: castle,
+        count: 5,
+    });
+    assert!(duplicated.to_state(&catalog).is_err());
+
+    let mut zero = base.clone();
+    zero.players[0].hand[0].count = 0;
+    assert!(zero.to_state(&catalog).is_err());
+
+    let mut many = base;
+    many.players = (0..300).map(|_| many.players[0].clone()).collect();
+    assert!(many.to_state(&catalog).is_err());
+}
+
+#[test]
+fn a_piece_id_at_the_maximum_does_not_overflow() {
+    let catalog = Catalog::builtin().unwrap();
+    let mut view = StateView::from_state(&state());
+    view.pieces.push(PieceView {
+        id: PieceId(u32::MAX),
+        kind: catalog.castle(),
+        owner: PlayerId(0),
+        anchor: Pos::new(0, 0),
+        facing: Facing::North,
+        hp: 1,
+    });
+    assert!(view.to_state(&catalog).is_err());
+}
+
+#[test]
+fn a_piece_anchored_at_the_edge_of_the_integer_range_is_rejected_without_overflow() {
+    let catalog = Catalog::builtin().unwrap();
+    for x in [i32::MAX, i32::MAX - 1, i32::MIN] {
+        let mut view = StateView::from_state(&state());
+        view.pieces.push(PieceView {
+            id: PieceId(0),
+            kind: catalog.castle(),
+            owner: PlayerId(0),
+            anchor: Pos::new(x, 0),
+            facing: Facing::North,
+            hp: 1,
+        });
+        assert!(view.to_state(&catalog).is_err(), "x = {x}");
+    }
+}

@@ -78,8 +78,12 @@ impl Rect {
 
     /// すべてのマスが、一辺 `board_size` の盤の内側にあるか（R-04 の 1）。
     pub fn is_inside(&self, board_size: u32) -> bool {
-        let size = board_size as i32;
-        self.x >= 0 && self.y >= 0 && self.x + self.w <= size && self.y + self.h <= size
+        // 外から受け取る座標が、i32 の端でも、あふれないように、広い型で比べる
+        let size = i64::from(board_size);
+        self.x >= 0
+            && self.y >= 0
+            && i64::from(self.x) + i64::from(self.w) <= size
+            && i64::from(self.y) + i64::from(self.h) <= size
     }
 
     /// 重なっているマスの数（R-54 のダメージ計算に使う）。

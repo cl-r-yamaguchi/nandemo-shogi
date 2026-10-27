@@ -1,9 +1,14 @@
 //! 盤面の全体の写し。`GameState` の内部を漏らさず、クライアントに必要なものだけを持つ。
 
+use std::collections::BTreeMap;
+
 use rules::finish::Outcome;
 use rules::geometry::{Facing, Pos};
+use rules::pieces::Catalog;
 use rules::pieces::KindId;
-use rules::state::{GameState, Phase, Piece, PieceId, PlayerId, Stage};
+use rules::state::{
+    GameState, Phase, Piece, PieceId, PlayerId, PlayerState, Stage, StateParts, Violation,
+};
 use serde::{Deserialize, Serialize};
 
 /// 持ち駒の 1 種類ぶん。
@@ -66,6 +71,49 @@ pub struct StateView {
 }
 
 impl StateView {
+    /// 写しから、`GameState` を復元する。不変条件（R-04）を満たさなければ、エラー。
+    /// 脱落の順は、近似（`GameState::restore` の説明を参照）。
+    pub fn to_state(&self, catalog: &Catalog) -> Result<GameState, Violation> {
+        let mut players = Vec::with_capacity(self.players.len());
+        for (seat, p) in self.players.iter().enumerate() {
+            let mut hand = BTreeMap::new();
+            for entry in &p.hand {
+                // 同じ種類が重なる・個数が 0 の表は、受け付けない
+                if entry.count == 0 || hand.insert(entry.kind, entry.count).is_some() {
+                    return Err(Violation::MalformedHand(PlayerId(seat as u8)));
+                }
+            }
+            players.push(PlayerState {
+                eliminated: p.eliminated,
+                hand,
+            });
+        }
+        GameState::restore(
+            catalog,
+            StateParts {
+                board_size: self.board_size,
+                players,
+                pieces: self
+                    .pieces
+                    .iter()
+                    .map(|p| Piece {
+                        id: p.id,
+                        kind: p.kind,
+                        owner: p.owner,
+                        anchor: p.anchor,
+                        facing: p.facing,
+                        hp: p.hp,
+                    })
+                    .collect(),
+                phase: self.phase,
+                current: self.current,
+                turn: self.turn,
+                stage: self.stage.clone(),
+                outcome: self.outcome.clone(),
+            },
+        )
+    }
+
     pub fn from_state(state: &GameState) -> Self {
         Self {
             board_size: state.board_size,
