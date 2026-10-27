@@ -145,6 +145,19 @@ pub struct AiDecision {
 }
 
 impl AiPlan {
+    /// 考えられなかったとき（考える処理が異常終了した、など）の結果。行動なしなので、反映すると、
+    /// 手番が強制的に終わる（時間切れと同じ扱い）。同じ失敗を、繰り返し続けない。
+    pub fn abstain(&self) -> AiDecision {
+        AiDecision {
+            seat: self.state.current,
+            turn: self.state.turn,
+            stage: self.state.stage.clone(),
+            pick: None,
+            action: None,
+            rng: self.rng.clone(),
+        }
+    }
+
     /// 締め切りまで考えて、選択と行動を決める。ルームには触れない。
     pub fn think(mut self, deadline: Instant) -> AiDecision {
         let seat = self.state.current;

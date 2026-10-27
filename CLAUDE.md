@@ -14,7 +14,8 @@
 - TypeScript の型生成: `cargo test -p protocol`（`web/src/net/generated/` に出力。手で編集しない）
 - フロントエンド（`web/` で実行）: `npm install`、`npm run dev`（wasm のビルド込みで、`127.0.0.1:5173` に起動）、`npm run build`、`npm run typecheck`、`npm run lint`、`npm test`
 - wasm のビルド（`web/` で実行）: `npm run wasm`（出力は `web/src/rules-bridge/pkg/`。git 管理外）
-- サーバーの設定: 環境変数 `NANDEMO_BIND`・`NANDEMO_ALLOWED_ORIGINS`・`NANDEMO_DB_PATH`（初期値はローカルホストのみ）
+- サーバーの起動: `cargo run -p server`（`ws://127.0.0.1:8080/ws` で待ち受ける）
+- サーバーの設定: 環境変数 `NANDEMO_BIND`・`NANDEMO_ALLOWED_ORIGINS`・`NANDEMO_DB_PATH`・`NANDEMO_MAX_CONNECTIONS`（同時接続の上限。初期値 100）・`NANDEMO_AI_DELAY_MS`（AI の手を見せるまでの最低の間。初期値 1500）。初期値は、ローカルホストだけを許す設定
 
 ## 規約
 - シェルスクリプトの規約は `.claude/rules/shell.md`（`scripts/**/*.sh` 編集時のみ適用）。

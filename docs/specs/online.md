@@ -2,7 +2,7 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 版 | 1.3 |
+| 版 | 1.4 |
 | 関連 | [game-rules.md](game-rules.md)、[ui.md](ui.md)、[architecture.md](architecture.md) |
 
 ## 1. 前提
@@ -118,7 +118,7 @@ WebSocket（JSON のテキストメッセージ）で通信する。メッセー
 | `game_over` | `outcome`（順位・終了理由）、`state` |
 | `notice` | `kind`、`message`（入室・退出・切断・再接続・AI 代行・時間切れ・ルーム終了） |
 
-`rejected` の `code`: `bad_message`・`too_large`・`version_mismatch`・`invalid_name`・`invalid_player_id`・`invalid_rules`・`not_in_room`・`not_playing`・`not_your_turn`・`stale_turn`・`illegal_action`。`reason` は、`illegal_action` のときだけ入り、`rules` の `ActionError`（例: `wrong_stage`、`not_adjacent_to_own`）。
+`rejected` の `code`: `bad_message`・`too_large`・`rate_limited`・`version_mismatch`・`invalid_name`・`invalid_player_id`・`invalid_rules`・`not_in_room`・`not_playing`・`not_your_turn`・`stale_turn`・`illegal_action`。`reason` は、`illegal_action` のときだけ入り、`rules` の `ActionError`（例: `wrong_stage`、`not_adjacent_to_own`）。
 
 `applied` の出来事（`events`）の種類（`type`）: `placed`（配置）、`moved`（移動）、`rotated`（回転）、`damaged`（駒、ダメージ、残り HP）、`captured`（捕食された駒、取った人、持ち駒に入るか）、`promoted`（成り）、`passed`（パス）、`eliminated`（脱落）、`finished`（終局）、`drawn`（ドロー）、`picked`（選択）、`timed_out`（時間切れ）。クライアントは、この順に、アニメーションで見せる（[ui.md](ui.md) の 4.4）。
 
@@ -126,9 +126,12 @@ WebSocket（JSON のテキストメッセージ）で通信する。メッセー
 
 - 受け取るメッセージには、サイズの上限（4096 バイト）と、形式の検証を設ける（`protocol` の `decode_client`）。検証に通らないものは、理由つきの `rejected` を返して破棄し、繰り返す接続は切る。
 - 値の検証: 表示名は 1〜12 文字（前後の空白は除く。制御文字は不可）、プレイヤー ID は 16〜64 文字の英数字・`-`・`_`、ルールは人数 2〜4・AI の強さ 1〜3。
-- 1 接続あたりの、メッセージの送信頻度に上限を設ける。
+- 1 接続あたりの、メッセージの送信頻度に上限を設ける（トークンバケット: 一度に 30 件、毎秒 10 件。超えたメッセージは `rejected`）。不正なメッセージ・頻度超過が、8 回続いたら、接続を切る（正しいメッセージで、数え直す）。
+- テキストだけを受け付ける（バイナリは `rejected`）。最初のメッセージは、10 秒以内の `hello`。`hello` の前の通信路も、同時接続数に数える。
+- 30 秒ごとに、サーバーが ping を送る。ping への応答を含めて、何も届かないまま 90 秒たった接続は、閉じる（切断として扱う）。サーバーの終了では、全接続を閉じてから、終わる。
+- 同じプレイヤー ID の新しい接続が来たら、古い接続を閉じる。プレイヤー ID は、秘密として扱う（ほかのプレイヤーへのメッセージには、含めない）。ID を知っている人は、その席に戻れる（認証は、対象外）。同時接続数の上限を超えたら、接続を拒否する（HTTP 503）。メッセージを送る速さに、読む速さが追いつかず、詰まった接続は、切る。
 - ルール違反の操作は、`rejected` を返す。状態は、変えない。
-- 接続を許すオリジン（ブラウザのページの出どころ）は、設定で決める。ローカルでは、ローカルホストだけ。
+- 接続を許すオリジン（ブラウザのページの出どころ）は、設定で決める。ローカルでは、ローカルホストだけ。`Origin` ヘッダーが、許可に含まれない、またはない接続は、HTTP 403 で拒否する。
 
 ## 7. AI
 
@@ -168,3 +171,4 @@ AI は、サーバーの中で動く、席の 1 つ。人間の席と、同じ�
 | 2026-10-26 | 1.1 | 強さ 3 の探索の詳細を追加 | #24 |
 | 2026-10-26 | 1.2 | 通信プロトコルを、`protocol` の実装に合わせて更新（選択を `act` に統合、`welcome` の追加、`rejected` の形、値の検証） | #26 |
 | 2026-10-26 | 1.3 | 終わったルームは片付けられることを明記 | #28 |
+| 2026-10-27 | 1.4 | 接続の扱い（送信頻度の制限・打ち切り・接続数の上限・無通信の切断・置き換え・オリジンの検査・ID の扱い）を明記 | #30 |

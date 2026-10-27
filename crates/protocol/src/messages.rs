@@ -124,6 +124,8 @@ pub enum RejectCode {
     NotInRoom,
     /// 対戦中でない（待機中に行動した、など）。
     NotPlaying,
+    /// メッセージの頻度が高すぎる。
+    RateLimited,
     /// 待機中でない（対戦が始まっているルームの、入室や開始）。
     NotWaiting,
     /// ルームが満員。
