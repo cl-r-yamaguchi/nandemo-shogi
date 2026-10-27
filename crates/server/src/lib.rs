@@ -7,7 +7,9 @@ pub mod hub;
 pub mod lobby;
 pub mod outbound;
 pub mod rate;
+pub mod record;
 pub mod room;
+pub mod store;
 pub mod ws;
 
 /// 単調に増える時刻（ミリ秒）。起点は、呼び出し側が決める（サーバーの起動時など）。

@@ -4,6 +4,7 @@ use std::time::Duration;
 use rules::pieces::Catalog;
 use server::config::Config;
 use server::hub::{Hub, HubConfig, random_seed};
+use server::store::StoreWriter;
 use server::ws;
 use tokio::net::TcpListener;
 
@@ -33,6 +34,14 @@ async fn main() {
         },
         random_seed(),
     );
+    let store = match StoreWriter::spawn(&config.db_path) {
+        Ok(store) => store,
+        Err(error) => {
+            eprintln!("{} を開けません: {error}", config.db_path);
+            std::process::exit(1);
+        }
+    };
+    hub.set_record_sink(Box::new(store.sink()));
     let listener = match TcpListener::bind(config.bind).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -55,6 +64,9 @@ async fn main() {
     };
     if let Err(error) = ws::serve(listener, hub, &config, shutdown).await {
         eprintln!("サーバーの異常終了: {error}");
+        store.finish();
         std::process::exit(1);
     }
+    // 頼まれた記録を、保存し終えてから終わる
+    store.finish();
 }
